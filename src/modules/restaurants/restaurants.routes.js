@@ -12,6 +12,8 @@ router.get('/verify-ruc/:ruc', checkRuc)
 router.get('/',    ctrl.list)
 router.get('/:id/customers', authenticate, authorize('RESTAURANT_OWNER', 'ADMIN'), ctrl.listCustomers)
 router.get('/:id/customers/:customerId', authenticate, authorize('RESTAURANT_OWNER', 'ADMIN'), ctrl.getCustomer)
+router.get('/:id/wallet', authenticate, authorize('RESTAURANT_OWNER'), ctrl.getWallet)
+router.post('/:id/withdrawals', authenticate, authorize('RESTAURANT_OWNER'), ctrl.requestWithdrawal)
 router.get('/:id', ctrl.getOne)
 
 // ── Dueño de restaurante ──────────────────────────────────────

@@ -131,6 +131,8 @@ model Restaurant {
   products   Product[]
   categories ProductCategory[]
   orders     Order[]
+  payouts    RestaurantPayout[]
+  withdrawals RestaurantWithdrawal[]
 
   @@index([status, createdAt])
   @@index([category])
@@ -269,6 +271,50 @@ model Payment {
   @@index([status, createdAt])
   @@index([method])
   @@map("payments")
+}
+
+model PlatformSettings {
+  id               String   @id @default("main")
+  commissionPercent Int     @default(20)
+  updatedAt        DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model RestaurantPayout {
+  id               String   @id @default(uuid())
+  restaurantId     String
+  grossAmount      Float
+  commissionPercent Int
+  commissionAmount Float
+  netAmount        Float
+  createdAt        DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, createdAt])
+  @@map("restaurant_payouts")
+}
+
+model RestaurantWithdrawal {
+  id                       String   @id @default(uuid())
+  restaurantId             String
+  amount                   Float
+  status                   String   @default("PENDING")
+  bankName                 String
+  accountHolder            String
+  destinationAccountMasked String
+  bankDetailsEncrypted     String   @db.Text
+  transferReference        String?
+  createdAt                DateTime @default(now())
+  paidAt                   DateTime?
+  updatedAt                DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("restaurant_withdrawals")
 }
 
 model DeliveryDriver {

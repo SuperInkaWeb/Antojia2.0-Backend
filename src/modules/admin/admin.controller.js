@@ -3,6 +3,23 @@ import * as svc from './admin.service.js'
 // ── Métricas ──────────────────────────────────────────────────
 export const getMetrics      = async (req, res) => res.json({ success: true, data: await svc.getMetrics() })
 export const getRevenueChart = async (req, res) => res.json({ success: true, data: await svc.getRevenueChart() })
+export const getPaymentSummary = async (req, res) => res.json({ success: true, data: await svc.getPaymentSummary() })
+export const getRestaurantSettlements = async (req, res) => res.json({ success: true, data: await svc.getRestaurantSettlements() })
+
+export const updateCommissionPercent = async (req, res) => {
+  const data = await svc.updateCommissionPercent(req.body.commissionPercent)
+  res.json({ success: true, data })
+}
+
+export const creditRestaurant = async (req, res) => {
+  const data = await svc.creditRestaurant(req.params.id)
+  res.status(201).json({ success: true, message: 'Saldo acreditado al restaurante', data })
+}
+
+export const markWithdrawalPaid = async (req, res) => {
+  const data = await svc.markWithdrawalPaid(req.params.id, req.body.transferReference)
+  res.json({ success: true, message: 'Retiro marcado como transferido', data })
+}
 
 // ── Usuarios ──────────────────────────────────────────────────
 export const listUsers = async (req, res) => {

@@ -74,6 +74,7 @@ cp .env.example .env
 ```env
 # Base de datos — Transaction Pooler de Supabase (puerto 6543, NO 5432)
 DATABASE_URL="postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10"
+DIRECT_URL="postgresql://postgres.[ref]:[password]@[db-host].supabase.co:5432/postgres?sslmode=require"
 
 # Auth0
 AUTH0_DOMAIN=dev-xxxx.us.auth0.com
@@ -91,6 +92,7 @@ MERCADOPAGO_WEBHOOK_SECRET=tu_firma_secreta_del_webhook
 
 # Checkout Pro sandbox (opcional, habilita el botón de prueba)
 MERCADOPAGO_TEST_ACCESS_TOKEN=tu_access_token_de_prueba
+WITHDRAWAL_DATA_ENCRYPTION_KEY=64_caracteres_hexadecimales_aleatorios
 
 # Solo para pruebas sin proveedor real de SUNAT
 SUNAT_MOCK_ENABLED=true
@@ -148,6 +150,8 @@ Ejecuta desde la carpeta `FOODINKA-BACKEND`:
 docker compose --env-file "..\FOODINKA-FRONTEND\.env" up --build
 ```
 
+Genera `WITHDRAWAL_DATA_ENCRYPTION_KEY` con `openssl rand -hex 32`; usa una clave distinta en desarrollo y producción, y conserva cada clave estable en su entorno. Cambiarla impide descifrar las solicitudes anteriores de ese entorno.
+
 Servicios disponibles:
 
 - Frontend: `http://localhost:5173`
@@ -197,6 +201,7 @@ npm run db:reset     # Reset completo + seed
 
 ```env
 DATABASE_URL=postgresql://...?pgbouncer=true&connection_limit=10
+DIRECT_URL=postgresql://...:5432/postgres?sslmode=require
 AUTH0_DOMAIN=dev-xxxx.us.auth0.com
 AUTH0_AUDIENCE=https://tu-api-identifier
 NODE_ENV=production
@@ -208,27 +213,28 @@ WEB_CONCURRENCY=1
 MERCADOPAGO_ACCESS_TOKEN=tu_access_token_de_produccion
 MERCADOPAGO_WEBHOOK_SECRET=tu_firma_secreta_del_webhook
 MERCADOPAGO_TEST_ACCESS_TOKEN=tu_access_token_de_prueba
+WITHDRAWAL_DATA_ENCRYPTION_KEY=64_caracteres_hexadecimales_aleatorios
 SUNAT_MOCK_ENABLED=true
 ```
 
 > ⚠️ Render asigna el puerto automáticamente vía `process.env.PORT`. No uses un puerto fijo en producción.
 
-### Start command en Render
+### Si Render despliega con Docker
+
+Selecciona el `Dockerfile` del repositorio. El contenedor ejecuta `npx prisma migrate deploy` antes de iniciar la API; no hace falta añadir un comando de arranque ni ejecutar la migración manualmente. En cada arranque solo aplica migraciones pendientes y registra el historial en `_prisma_migrations`, sin borrar los datos existentes.
+
+### Si Render despliega como servicio Node
+
+Configura estos comandos una sola vez. El comando de migraciones se ejecuta al arrancar, pero solo aplica cambios pendientes.
+
+Build command:
 ```
-node src/server.js
+npm install --include=dev && npx prisma generate
 ```
 
-### Build command en Render
+Start command:
 ```
-npm install && npx prisma generate
-```
-
-### Inicializar BD en Render (una sola vez)
-Desde el Shell de Render:
-```bash
-npx prisma db push
-node prisma/seed.js
-node prisma/seed_full.js
+npm run db:migrate && npm start
 ```
 
 ---

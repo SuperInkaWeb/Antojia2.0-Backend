@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database.js'
 import { AppError } from '../../shared/utils/appError.js'
+import { decryptSensitiveData } from '../../shared/utils/sensitiveData.js'
 
 function paginate(query) {
   const page  = parseInt(query.page)  || 1
@@ -14,15 +15,15 @@ function paginationMeta(page, limit, total) {
 
 // ── Métricas ──────────────────────────────────────────────────
 export async function getMetrics() {
-  const now          = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const startOfLast  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const endOfLast    = new Date(now.getFullYear(), now.getMonth(), 0)
+  const now = new Date()
+  const limaNow = new Date(now.getTime() - 5 * 60 * 60 * 1000)
+  const startOfMonth = new Date(Date.UTC(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), 1) + 5 * 60 * 60 * 1000)
+  const startOfLast = new Date(Date.UTC(limaNow.getUTCFullYear(), limaNow.getUTCMonth() - 1, 1) + 5 * 60 * 60 * 1000)
+  const endOfLast = new Date(startOfMonth.getTime() - 1)
 
   const [
     totalUsers, totalRestaurants, activeRestaurants, pendingRestaurants,
     totalOrders, ordersThisMonth, ordersLastMonth,
-    revenueThisMonth, revenueLastMonth, avgTicket,
     topRestaurants, ordersByStatus, ordersByType,
   ] = await Promise.all([
     prisma.user.count(),
@@ -32,13 +33,9 @@ export async function getMetrics() {
     prisma.order.count({ where: { status: { not: 'CANCELLED' } } }),
     prisma.order.count({ where: { createdAt: { gte: startOfMonth }, status: { not: 'CANCELLED' } } }),
     prisma.order.count({ where: { createdAt: { gte: startOfLast, lte: endOfLast }, status: { not: 'CANCELLED' } } }),
-    prisma.payment.aggregate({ where: { status: 'PAID', createdAt: { gte: startOfMonth } }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { status: 'PAID', createdAt: { gte: startOfLast, lte: endOfLast } }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { status: 'PAID' }, _avg: { amount: true } }),
     prisma.restaurant.findMany({
-      where: { status: 'ACTIVE' },
       select: {
-        id: true, name: true, category: true, logoUrl: true,
+        id: true, name: true, category: true, logoUrl: true, status: true,
         _count: { select: { orders: { where: { status: { not: 'CANCELLED' } } } } },
       },
       orderBy: { orders: { _count: 'desc' } },
@@ -48,8 +45,23 @@ export async function getMetrics() {
     prisma.order.groupBy({ by: ['type'],   _count: { _all: true } }),
   ])
 
-  const revThisMonth = revenueThisMonth._sum.amount || 0
-  const revLastMonth = revenueLastMonth._sum.amount || 0
+  const [settings, paidPayments] = await Promise.all([
+    getPlatformSettings(),
+    prisma.payment.findMany({
+      where: { status: 'PAID', method: 'MERCADOPAGO', order: { status: { not: 'CANCELLED' } } },
+      select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+    }),
+  ])
+  const productionPayments = paidPayments.filter(payment => payment.metadata?.mode !== 'TEST')
+  const byPaidDate = (payment) => payment.paidAt || payment.createdAt
+  const grossSales = payment => restaurantSales(payment)
+  const revThisMonth = productionPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
+    .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
+  const revLastMonth = productionPayments.filter(payment => byPaidDate(payment) >= startOfLast && byPaidDate(payment) <= endOfLast)
+    .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
+  const avgTicket = productionPayments.length
+    ? productionPayments.reduce((sum, payment) => sum + Number(payment.amount), 0) / productionPayments.length
+    : 0
   const revenueGrowth = revLastMonth > 0
     ? parseFloat((((revThisMonth - revLastMonth) / revLastMonth) * 100).toFixed(1)) : null
   const orderGrowth = ordersLastMonth > 0
@@ -67,25 +79,160 @@ export async function getMetrics() {
       thisMonth: parseFloat(revThisMonth.toFixed(2)),
       lastMonth: parseFloat(revLastMonth.toFixed(2)),
       growth:    revenueGrowth,
-      avgTicket: parseFloat((avgTicket._avg.amount || 0).toFixed(2)),
+      avgTicket: parseFloat(avgTicket.toFixed(2)),
+      commissionPercent: settings.commissionPercent,
+      paidPayments: productionPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
     },
     topRestaurants: topRestaurants.map(r => ({ ...r, totalOrders: r._count.orders })),
   }
 }
 
 export async function getRevenueChart() {
-  const results = await prisma.$queryRaw`
-    SELECT
-      TO_CHAR(DATE_TRUNC('month', p."createdAt"), 'YYYY-MM') AS month,
-      COUNT(*)::int                                           AS orders,
-      COALESCE(SUM(p.amount), 0)::float                      AS revenue
-    FROM payments p
-    WHERE p.status = 'PAID'
-      AND p."createdAt" >= NOW() - INTERVAL '6 months'
-    GROUP BY DATE_TRUNC('month', p."createdAt")
-    ORDER BY DATE_TRUNC('month', p."createdAt") ASC
-  `
-  return results
+  const settings = await getPlatformSettings()
+  const from = new Date()
+  from.setMonth(from.getMonth() - 5, 1)
+  from.setHours(0, 0, 0, 0)
+  const payments = await prisma.payment.findMany({
+    where: { status: 'PAID', method: 'MERCADOPAGO', paidAt: { gte: from }, order: { status: { not: 'CANCELLED' } } },
+    select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+  })
+  const totals = new Map()
+  for (const payment of payments.filter(item => item.metadata?.mode !== 'TEST')) {
+    const date = payment.paidAt || payment.createdAt
+    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const sale = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    totals.set(month, (totals.get(month) || 0) + sale * settings.commissionPercent / 100)
+  }
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, revenue]) => ({ month, revenue: Number(revenue.toFixed(2)) }))
+}
+
+async function getPlatformSettings() {
+  return prisma.platformSettings.upsert({ where: { id: 'main' }, update: {}, create: { id: 'main', commissionPercent: 20 } })
+}
+
+function dateBoundaries(now = new Date()) {
+  const limaNow = new Date(now.getTime() - 5 * 60 * 60 * 1000)
+  const dayOfMonth = limaNow.getUTCDate()
+  const weekday = (limaNow.getUTCDay() + 6) % 7
+  const start = (year, month, day) => new Date(Date.UTC(year, month, day) + 5 * 60 * 60 * 1000)
+  const today = start(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), dayOfMonth)
+  return {
+    today,
+    week: start(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), dayOfMonth - weekday),
+    month: start(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), 1),
+    year: start(limaNow.getUTCFullYear(), 0, 1),
+  }
+}
+
+export async function getPaymentSummary() {
+  const payments = await prisma.payment.findMany({
+    where: { status: 'PAID', method: 'MERCADOPAGO' },
+    select: { amount: true, paidAt: true, createdAt: true, metadata: true },
+  })
+  const bounds = dateBoundaries()
+  const totals = { today: 0, week: 0, month: 0, year: 0, lifetime: 0, count: 0 }
+  for (const payment of payments) {
+    if (payment.metadata?.mode === 'TEST') continue
+    const date = payment.paidAt || payment.createdAt
+    const amount = Number(payment.amount || 0)
+    totals.lifetime += amount
+    totals.count += 1
+    if (date >= bounds.today) totals.today += amount
+    if (date >= bounds.week) totals.week += amount
+    if (date >= bounds.month) totals.month += amount
+    if (date >= bounds.year) totals.year += amount
+  }
+  return Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, key === 'count' ? value : Number(value.toFixed(2))]))
+}
+
+function restaurantSales(payment) {
+  return Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+}
+
+export async function getRestaurantSettlements() {
+  const [settings, restaurants, withdrawals] = await Promise.all([
+    getPlatformSettings(),
+    prisma.restaurant.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, name: true, status: true, district: true, logoUrl: true,
+        owner: { select: { name: true, email: true } },
+        payouts: { select: { grossAmount: true, commissionAmount: true, netAmount: true, commissionPercent: true, createdAt: true } },
+        withdrawals: { select: { id: true, amount: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, bankDetailsEncrypted: true, transferReference: true, createdAt: true, paidAt: true }, orderBy: { createdAt: 'desc' } },
+        orders: { where: { status: { not: 'CANCELLED' } }, select: { payment: { where: { status: 'PAID', method: 'MERCADOPAGO' }, select: { amount: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } } } } },
+      },
+    }),
+    prisma.restaurantWithdrawal.findMany({ where: { status: 'PENDING' }, include: { restaurant: { select: { id: true, name: true } } }, orderBy: { createdAt: 'asc' } }),
+  ])
+  return {
+    commissionPercent: settings.commissionPercent,
+    restaurants: restaurants.map(restaurant => {
+      const paidPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.metadata?.mode !== 'TEST')
+      const salesTotal = paidPayments.reduce((sum, payment) => sum + restaurantSales(payment), 0)
+      const creditedGross = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.grossAmount), 0)
+      const pendingSales = Math.max(0, salesTotal - creditedGross)
+      const totalCredits = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
+      const paidCommission = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.commissionAmount), 0)
+      const reservedWithdrawals = restaurant.withdrawals.filter(item => ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+      return {
+        id: restaurant.id, name: restaurant.name, status: restaurant.status, district: restaurant.district,
+        logoUrl: restaurant.logoUrl, owner: restaurant.owner,
+        salesTotal: Number(salesTotal.toFixed(2)), paidOrderCount: paidPayments.length,
+        commissionPercent: settings.commissionPercent,
+        adminEarnedTotal: Number((paidCommission + pendingSales * settings.commissionPercent / 100).toFixed(2)),
+        restaurantEarnedTotal: Number((totalCredits + pendingSales * (100 - settings.commissionPercent) / 100).toFixed(2)),
+        pendingSales: Number(pendingSales.toFixed(2)),
+        pendingCommission: Number((pendingSales * settings.commissionPercent / 100).toFixed(2)),
+        pendingCredit: Number((pendingSales * (100 - settings.commissionPercent) / 100).toFixed(2)),
+        walletBalance: Number(Math.max(0, totalCredits - reservedWithdrawals).toFixed(2)),
+        payouts: restaurant.payouts.sort((a, b) => b.createdAt - a.createdAt),
+        withdrawals: restaurant.withdrawals.map(({ bankDetailsEncrypted, ...item }) => ({ ...item })),
+      }
+    }),
+    withdrawalRequests: withdrawals.map(item => ({
+      id: item.id, restaurant: item.restaurant, amount: item.amount, status: item.status,
+      bankName: item.bankName, accountHolder: item.accountHolder,
+      destinationAccountMasked: item.destinationAccountMasked,
+      bankDetails: decryptSensitiveData(item.bankDetailsEncrypted),
+      transferReference: item.transferReference, createdAt: item.createdAt,
+    })),
+  }
+}
+
+export async function updateCommissionPercent(value) {
+  const commissionPercent = Number(value)
+  if (!Number.isInteger(commissionPercent) || commissionPercent < 20 || commissionPercent > 40) {
+    throw new AppError('La comisión debe ser un número entero entre 20 % y 40 %', 400)
+  }
+  return prisma.platformSettings.upsert({ where: { id: 'main' }, update: { commissionPercent }, create: { id: 'main', commissionPercent } })
+}
+
+export async function creditRestaurant(id) {
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "restaurants" WHERE "id" = ${id} FOR UPDATE`
+    const restaurant = await tx.restaurant.findUnique({ where: { id }, select: { id: true } })
+    if (!restaurant) throw new AppError('Restaurante no encontrado', 404)
+    const settings = await tx.platformSettings.upsert({ where: { id: 'main' }, update: {}, create: { id: 'main', commissionPercent: 20 } })
+    const [payments, previousPayouts] = await Promise.all([
+      tx.payment.findMany({ where: { status: 'PAID', method: 'MERCADOPAGO', order: { restaurantId: id, status: { not: 'CANCELLED' } } }, select: { metadata: true, order: { select: { subtotal: true, discountAmount: true } } } }),
+      tx.restaurantPayout.aggregate({ where: { restaurantId: id }, _sum: { grossAmount: true } }),
+    ])
+    const salesTotal = payments.filter(payment => payment.metadata?.mode !== 'TEST').reduce((sum, payment) => sum + restaurantSales(payment), 0)
+    const pendingSales = Number(Math.max(0, salesTotal - Number(previousPayouts._sum.grossAmount || 0)).toFixed(2))
+    if (pendingSales < 0.01) throw new AppError('Este restaurante no tiene ventas pagadas pendientes de liquidar', 400)
+    const commissionAmount = Number((pendingSales * settings.commissionPercent / 100).toFixed(2))
+    const netAmount = Number((pendingSales - commissionAmount).toFixed(2))
+    return tx.restaurantPayout.create({ data: { restaurantId: id, grossAmount: pendingSales, commissionPercent: settings.commissionPercent, commissionAmount, netAmount } })
+  })
+}
+
+export async function markWithdrawalPaid(id, transferReference) {
+  const reference = String(transferReference || '').trim()
+  if (!reference) throw new AppError('Ingresa el número de operación de la transferencia', 400)
+  const withdrawal = await prisma.restaurantWithdrawal.findUnique({ where: { id } })
+  if (!withdrawal) throw new AppError('Solicitud de retiro no encontrada', 404)
+  if (withdrawal.status !== 'PENDING') throw new AppError('Esta solicitud ya fue procesada', 409)
+  return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference, paidAt: new Date() } })
 }
 
 // ── Usuarios ──────────────────────────────────────────────────

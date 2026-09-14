@@ -73,7 +73,6 @@ export async function getProfile(userId) {
           description: true, address: true, addressReference: true, district: true,
           latitude: true, longitude: true, phone: true,
           deliveryFee: true, estimatedTime: true,
-          commissionRate: true,
         },
       },
       driverProfile: {

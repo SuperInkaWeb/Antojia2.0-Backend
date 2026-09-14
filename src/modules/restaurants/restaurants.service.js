@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database.js'
 import { AppError } from '../../shared/utils/appError.js'
+import { encryptSensitiveData, maskAccount } from '../../shared/utils/sensitiveData.js'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -24,7 +25,6 @@ const RESTAURANT_SELECT = {
   deliveryFee: true,
   minOrderAmount: true,
   estimatedTime: true,
-  commissionRate: true,
   createdAt: true,
   _count: {
     select: { orders: true, products: true },
@@ -114,6 +114,58 @@ export async function getOne(id) {
       ? [{ id: 'uncategorized', name: 'Menú', products: uncategorizedProducts }, ...categories]
       : categories,
   }
+}
+
+export async function getWallet(restaurantId, userId) {
+  const restaurant = await prisma.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { id: true, ownerId: true, payouts: { orderBy: { createdAt: 'desc' } }, withdrawals: { orderBy: { createdAt: 'desc' } } },
+  })
+  if (!restaurant) throw new AppError('Restaurante no encontrado', 404)
+  if (restaurant.ownerId !== userId) throw new AppError('Sin permisos', 403)
+  const credited = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
+  const reserved = restaurant.withdrawals.filter(item => ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+  return {
+    balance: Number(Math.max(0, credited - reserved).toFixed(2)),
+    payouts: restaurant.payouts,
+    withdrawals: restaurant.withdrawals.map(({ bankDetailsEncrypted, ...item }) => item),
+  }
+}
+
+export async function requestWithdrawal(restaurantId, userId, body) {
+  const amount = Number(body.amount)
+  const bankName = String(body.bankName || '').trim()
+  const accountHolder = String(body.accountHolder || '').trim()
+  const accountNumber = String(body.accountNumber || '').replace(/\s/g, '')
+  const cci = String(body.cci || '').replace(/\s/g, '')
+  const accountType = String(body.accountType || 'CUENTA').trim()
+  if (!Number.isFinite(amount) || amount <= 0) throw new AppError('Ingresa un monto de retiro válido', 400)
+  if (!bankName || !accountHolder || (!accountNumber && !cci)) throw new AppError('Completa banco, titular y número de cuenta o CCI', 400)
+  if ((accountNumber && !/^\d{8,20}$/.test(accountNumber)) || (cci && !/^\d{20}$/.test(cci))) {
+    throw new AppError('Verifica el número de cuenta (8 a 20 dígitos) y CCI (20 dígitos)', 400)
+  }
+  const sensitive = encryptSensitiveData({ accountNumber, cci, accountType, accountHolder })
+  const destination = cci || accountNumber
+
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "restaurants" WHERE "id" = ${restaurantId} FOR UPDATE`
+    const restaurant = await tx.restaurant.findUnique({ where: { id: restaurantId }, select: { id: true, ownerId: true } })
+    if (!restaurant) throw new AppError('Restaurante no encontrado', 404)
+    if (restaurant.ownerId !== userId) throw new AppError('Sin permisos', 403)
+    const [credits, withdrawals] = await Promise.all([
+      tx.restaurantPayout.aggregate({ where: { restaurantId }, _sum: { netAmount: true } }),
+      tx.restaurantWithdrawal.aggregate({ where: { restaurantId, status: { in: ['PENDING', 'PROCESSING', 'PAID'] } }, _sum: { amount: true } }),
+    ])
+    const balance = Number(credits._sum.netAmount || 0) - Number(withdrawals._sum.amount || 0)
+    if (amount > balance + 0.001) throw new AppError('El monto supera tu saldo disponible', 400)
+    return tx.restaurantWithdrawal.create({
+      data: {
+        restaurantId, amount: Number(amount.toFixed(2)), bankName, accountHolder,
+        destinationAccountMasked: maskAccount(destination), bankDetailsEncrypted: sensitive,
+      },
+      select: { id: true, amount: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, createdAt: true },
+    })
+  })
 }
 
 async function requireRestaurantAccess(restaurantId, userId, role) {

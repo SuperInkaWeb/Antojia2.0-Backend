@@ -10,6 +10,11 @@ router.use(authenticate, authorize('ADMIN'))
 // ── Dashboard / métricas ──────────────────────────────────────
 router.get('/metrics',          ctrl.getMetrics)
 router.get('/metrics/revenue',  ctrl.getRevenueChart)
+router.get('/payments/summary', ctrl.getPaymentSummary)
+router.get('/settlements', ctrl.getRestaurantSettlements)
+router.patch('/settlements/commission', ctrl.updateCommissionPercent)
+router.post('/settlements/restaurants/:id/credit', ctrl.creditRestaurant)
+router.patch('/settlements/withdrawals/:id/paid', ctrl.markWithdrawalPaid)
 
 // ── Tabla de usuarios ─────────────────────────────────────────
 router.get('/users',            ctrl.listUsers)

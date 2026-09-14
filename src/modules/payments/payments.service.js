@@ -28,29 +28,6 @@ function getMercadoPagoAccessToken(testMode = false) {
   return accessToken
 }
 
-function buildSettlementMetadata(payment, commissionRate, newStatus) {
-  if (newStatus !== 'PAID') return {}
-
-  const grossAmount = Number(payment.amount)
-  const rate = Number(commissionRate || 0)
-  const commissionAmount = Number((grossAmount * rate).toFixed(2))
-  const netAmount = Number((grossAmount - commissionAmount).toFixed(2))
-  const releaseDate = new Date()
-  releaseDate.setDate(releaseDate.getDate() + 7)
-
-  return {
-    settlement: {
-      grossAmount,
-      commissionRate: rate,
-      commissionAmount,
-      netAmount,
-      status: 'PENDING',
-      fundsReleased: false,
-      releaseDate: releaseDate.toISOString(),
-    },
-  }
-}
-
 // ── Simulador de pasarela de pago (Yape / Efectivo) ───────────
 // Retorna: { approved: true/false, transactionId, metadata }
 async function procesarPago({ method, amount, phoneNumber }) {
@@ -294,13 +271,6 @@ export async function processMercadoPagoUpdate(mpPaymentId, { testMode = false }
 
   const payment = await prisma.payment.findUnique({
     where: { id: ourPaymentId },
-    include: {
-      order: {
-        select: {
-          restaurant: { select: { commissionRate: true } },
-        },
-      },
-    },
   })
   if (!payment) return null
 
@@ -317,11 +287,6 @@ export async function processMercadoPagoUpdate(mpPaymentId, { testMode = false }
       mpStatus:        mpPayment.status,
       mpStatusDetail:  mpPayment.status_detail,
       mpPaymentMethod: mpPayment.payment_method_id,
-      ...buildSettlementMetadata(
-        payment,
-        payment.order.restaurant.commissionRate,
-        newStatus
-      ),
     },
     ...(newStatus === 'PAID' && { paidAt: new Date() }),
   }

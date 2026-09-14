@@ -22,6 +22,16 @@ export async function getCustomer(req, res) {
   res.json({ success: true, data })
 }
 
+export async function getWallet(req, res) {
+  const data = await svc.getWallet(req.params.id, req.user.id)
+  res.json({ success: true, data })
+}
+
+export async function requestWithdrawal(req, res) {
+  const data = await svc.requestWithdrawal(req.params.id, req.user.id, req.body)
+  res.status(201).json({ success: true, message: 'Solicitud de retiro enviada al administrador', data })
+}
+
 // POST /api/v1/restaurants
 export async function create(req, res) {
   const {
