@@ -49,12 +49,12 @@ export async function createSignedUpload({ userId, scope, contentType }) {
   }
 
   const result = await response.json().catch(() => ({}))
-  if (!response.ok || typeof result.signedURL !== 'string') {
+  if (!response.ok || typeof result.url !== 'string') {
     console.error('Supabase no pudo crear URL de subida:', response.status, result.message || result.error || '')
     throw new AppError('No se pudo preparar la subida de la imagen', 502)
   }
 
-  const signedUrl = new URL(`${url}/storage/v1${result.signedURL}`).toString()
+  const signedUrl = new URL(`${url}/storage/v1${result.url}`).toString()
   const encodedPath = path.split('/').map(encodeURIComponent).join('/')
   return {
     signedUrl,
