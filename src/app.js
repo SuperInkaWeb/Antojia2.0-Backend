@@ -13,6 +13,7 @@ import paymentsRouter    from './modules/payments/payments.routes.js'
 import { mpWebhook }     from './modules/payments/payments.controller.js'
 import adminRouter       from './modules/admin/admin.routes.js'
 import driversRouter     from './modules/drivers/drivers.routes.js'
+import uploadsRouter     from './modules/storage/storage.routes.js'
 
 const app = express()
 
@@ -104,6 +105,7 @@ app.post('/api/v1/payments/mercadopago/webhook', mpWebhook)
 app.use('/api/v1/payments',    paymentsRouter)
 app.use('/api/v1/admin',       adminRouter)
 app.use('/api/v1/drivers',     driversRouter)
+app.use('/api/v1/uploads',     uploadsRouter)
 
 // ── 9. 404 ────────────────────────────────────────────────────────
 app.use((req, res) => {

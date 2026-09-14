@@ -80,6 +80,10 @@ DIRECT_URL="postgresql://postgres.[ref]:[password]@[db-host].supabase.co:5432/po
 AUTH0_DOMAIN=dev-xxxx.us.auth0.com
 AUTH0_AUDIENCE=https://tu-api-identifier
 
+# Supabase Storage (solo backend; nunca exponer la clave service_role al frontend)
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=tu_clave_service_role_de_supabase
+
 # Servidor
 PORT=4000
 NODE_ENV=development
@@ -210,6 +214,8 @@ FRONTEND_URL=https://tu-app.netlify.app
 BACKEND_URL=https://tu-backend.onrender.com
 DB_POOL_SIZE=10
 WEB_CONCURRENCY=1
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=tu_clave_service_role_de_supabase
 MERCADOPAGO_ACCESS_TOKEN=tu_access_token_de_produccion
 MERCADOPAGO_WEBHOOK_SECRET=tu_firma_secreta_del_webhook
 MERCADOPAGO_TEST_ACCESS_TOKEN=tu_access_token_de_prueba
