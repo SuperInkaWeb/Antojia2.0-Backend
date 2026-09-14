@@ -123,10 +123,39 @@ export async function getWallet(restaurantId, userId) {
   })
   if (!restaurant) throw new AppError('Restaurante no encontrado', 404)
   if (restaurant.ownerId !== userId) throw new AppError('Sin permisos', 403)
+
+  const [settings, paidPayments] = await Promise.all([
+    prisma.platformSettings.findUnique({ where: { id: 'main' }, select: { commissionPercent: true } }),
+    prisma.payment.findMany({
+      where: { status: 'PAID', method: 'MERCADOPAGO', order: { restaurantId, status: { not: 'CANCELLED' } } },
+      select: { amount: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+    }),
+  ])
+  const commissionPercent = settings?.commissionPercent ?? 20
+  const productionPayments = paidPayments.filter(payment => payment.metadata?.mode !== 'TEST')
+  const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST')
+  const saleAmount = payment => Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+  const salesTotal = productionPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)
+  const testSalesTotal = testPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)
+  const creditedGross = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.grossAmount), 0)
+  const pendingSales = Math.max(0, salesTotal - creditedGross)
   const credited = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
+  const pastCommission = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.commissionAmount), 0)
+  const restaurantEarnedTotal = credited + pendingSales * (100 - commissionPercent) / 100
   const reserved = restaurant.withdrawals.filter(item => ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
   return {
     balance: Number(Math.max(0, credited - reserved).toFixed(2)),
+    commissionPercent,
+    salesTotal: Number(salesTotal.toFixed(2)),
+    paidOrderCount: productionPayments.length,
+    pendingSales: Number(pendingSales.toFixed(2)),
+    adminCommissionTotal: Number((pastCommission + pendingSales * commissionPercent / 100).toFixed(2)),
+    restaurantEarnedTotal: Number(restaurantEarnedTotal.toFixed(2)),
+    pendingRestaurantNet: Number(Math.max(0, restaurantEarnedTotal - credited).toFixed(2)),
+    testSalesTotal: Number(testSalesTotal.toFixed(2)),
+    testOrderCount: testPayments.length,
+    testAdminCommission: Number((testSalesTotal * commissionPercent / 100).toFixed(2)),
+    testRestaurantNet: Number((testSalesTotal * (100 - commissionPercent) / 100).toFixed(2)),
     payouts: restaurant.payouts,
     withdrawals: restaurant.withdrawals.map(({ bankDetailsEncrypted, ...item }) => item),
   }

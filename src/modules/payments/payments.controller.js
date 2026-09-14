@@ -1,6 +1,16 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import * as svc from './payments.service.js'
 
+export function getPublicConfig(req, res) {
+  res.json({
+    success: true,
+    data: {
+      productionEnabled: Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN),
+      testEnabled: Boolean(process.env.MERCADOPAGO_TEST_ACCESS_TOKEN),
+    },
+  })
+}
+
 function isValidMpSignature(req) {
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim()
   if (!secret) return true

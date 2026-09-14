@@ -52,6 +52,11 @@ function calcFinalPrice(price, discountPct) {
   return parseFloat((price * (1 - discountPct / 100)).toFixed(2))
 }
 
+const RESTAURANT_ORDER_INCLUDE = {
+  ...ORDER_INCLUDE,
+  payment: { select: { ...ORDER_INCLUDE.payment.select, metadata: true } },
+}
+
 function generateDeliveryCode() {
   return String(randomInt(100000, 1000000))
 }
@@ -329,11 +334,17 @@ export async function listByRestaurant(restaurantId, userId, role, query) {
   const where = { restaurantId, ...(status && { status }), ...(type && { type }) }
 
   const [data, total] = await Promise.all([
-    prisma.order.findMany({ where, include: ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+    prisma.order.findMany({ where, include: RESTAURANT_ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, skip, take: limit }),
     prisma.order.count({ where }),
   ])
 
-  return { data: data.map(hideDeliveryCode), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } }
+  const restaurantOrders = data.map(order => {
+    if (!order.payment) return hideDeliveryCode(order)
+    const { metadata, ...payment } = order.payment
+    return hideDeliveryCode({ ...order, payment: { ...payment, isTest: metadata?.mode === 'TEST' } })
+  })
+
+  return { data: restaurantOrders, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } }
 }
 
 // ── Actualizar estado ─────────────────────────────────────────
