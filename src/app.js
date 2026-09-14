@@ -13,7 +13,7 @@ import paymentsRouter    from './modules/payments/payments.routes.js'
 import { mpWebhook }     from './modules/payments/payments.controller.js'
 import adminRouter       from './modules/admin/admin.routes.js'
 import driversRouter     from './modules/drivers/drivers.routes.js'
-import uploadsRouter     from './modules/storage/storage.routes.js'
+import uploadsRouter     from './modules/storage/uploads.routes.js'
 
 const app = express()
 
