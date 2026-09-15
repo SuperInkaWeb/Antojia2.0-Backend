@@ -291,9 +291,11 @@ export async function myOrders(userId, query) {
     select: { id: true, name: true, category: true, logoUrl: true },
   })
 
+  const visibleData = data.filter(order => order.payment?.status !== 'FAILED' && !(order.payment?.status === 'PENDING' && order.status === 'PENDING'))
+
   return {
-    data,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    data: visibleData,
+    pagination: { page, limit, total: visibleData.length, totalPages: Math.max(1, Math.ceil(visibleData.length / limit)) },
     crm: {
       totalOrders:     deliveredSummary._count._all,
       totalSpent:      deliveredSummary._sum.total || 0,
