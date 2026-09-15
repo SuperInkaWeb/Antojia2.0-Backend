@@ -56,9 +56,11 @@ export async function getMetrics() {
   const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST')
   const byPaidDate = (payment) => payment.paidAt || payment.createdAt
   const grossSales = payment => restaurantSales(payment)
-  const revThisMonth = productionPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
+  // Las ventas sandbox también se muestran como ingreso simulado para que
+  // las compras hechas durante las pruebas no desaparezcan del dashboard.
+  const revThisMonth = paidPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
     .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
-  const revLastMonth = productionPayments.filter(payment => byPaidDate(payment) >= startOfLast && byPaidDate(payment) <= endOfLast)
+  const revLastMonth = paidPayments.filter(payment => byPaidDate(payment) >= startOfLast && byPaidDate(payment) <= endOfLast)
     .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
   const testSalesThisMonth = testPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
     .reduce((sum, payment) => sum + grossSales(payment), 0)
@@ -86,6 +88,7 @@ export async function getMetrics() {
       avgTicket: parseFloat(avgTicket.toFixed(2)),
       commissionPercent: settings.commissionPercent,
       paidPayments: productionPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
+      recordedSalesThisMonth: Number(paidPayments.filter(payment => byPaidDate(payment) >= startOfMonth).reduce((sum, payment) => sum + grossSales(payment), 0).toFixed(2)),
       testSalesThisMonth: Number(testSalesThisMonth.toFixed(2)),
       testAdminCommissionThisMonth: Number(testAdminCommissionThisMonth.toFixed(2)),
       testPaymentsThisMonth: testPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
@@ -182,6 +185,7 @@ export async function getRestaurantSettlements() {
       const testPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.metadata?.mode === 'TEST')
       const salesTotal = paidPayments.reduce((sum, payment) => sum + restaurantSales(payment), 0)
       const testSalesTotal = testPayments.reduce((sum, payment) => sum + restaurantSales(payment), 0)
+      const recordedSalesTotal = salesTotal + testSalesTotal
       const creditedGross = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.grossAmount), 0)
       const pendingSales = Math.max(0, salesTotal - creditedGross)
       const totalCredits = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
@@ -191,6 +195,7 @@ export async function getRestaurantSettlements() {
         id: restaurant.id, name: restaurant.name, status: restaurant.status, district: restaurant.district,
         logoUrl: restaurant.logoUrl, owner: restaurant.owner,
         salesTotal: Number(salesTotal.toFixed(2)), paidOrderCount: paidPayments.length,
+        recordedSalesTotal: Number(recordedSalesTotal.toFixed(2)),
         testSalesTotal: Number(testSalesTotal.toFixed(2)), testPaidOrderCount: testPayments.length,
         testAdminCommission: Number((testSalesTotal * settings.commissionPercent / 100).toFixed(2)),
         testRestaurantNet: Number((testSalesTotal * (100 - settings.commissionPercent) / 100).toFixed(2)),

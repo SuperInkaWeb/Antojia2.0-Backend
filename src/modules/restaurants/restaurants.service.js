@@ -137,6 +137,7 @@ export async function getWallet(restaurantId, userId) {
   const saleAmount = payment => Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
   const salesTotal = productionPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)
   const testSalesTotal = testPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)
+  const recordedSalesTotal = salesTotal + testSalesTotal
   const creditedGross = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.grossAmount), 0)
   const pendingSales = Math.max(0, salesTotal - creditedGross)
   const credited = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
@@ -147,6 +148,8 @@ export async function getWallet(restaurantId, userId) {
     balance: Number(Math.max(0, credited - reserved).toFixed(2)),
     commissionPercent,
     salesTotal: Number(salesTotal.toFixed(2)),
+    recordedSalesTotal: Number(recordedSalesTotal.toFixed(2)),
+    recordedRestaurantNet: Number((recordedSalesTotal * (100 - commissionPercent) / 100).toFixed(2)),
     paidOrderCount: productionPayments.length,
     pendingSales: Number(pendingSales.toFixed(2)),
     adminCommissionTotal: Number((pastCommission + pendingSales * commissionPercent / 100).toFixed(2)),
