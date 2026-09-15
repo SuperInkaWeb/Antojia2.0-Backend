@@ -308,7 +308,7 @@ export async function processMercadoPagoUpdate(mpPaymentId, { testMode = false }
 // mpPaymentId viene del query param `payment_id` que Mercado Pago agrega
 // a la back_url al redirigir de vuelta — es la primera vez que lo conocemos,
 // por eso no podemos depender únicamente de payment.transactionId.
-export async function syncMercadoPago({ orderId, userId, mpPaymentId }) {
+export async function syncMercadoPago({ orderId, userId, mpPaymentId, result }) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { payment: true },
@@ -318,6 +318,17 @@ export async function syncMercadoPago({ orderId, userId, mpPaymentId }) {
 
   const payment = order.payment
   if (!payment) throw new AppError('Pago no encontrado', 404)
+
+  // Mercado Pago puede volver por failure sin payment_id. En ese caso
+  // cancelamos de forma explícita el pago y el pedido para que no aparezca
+  // como delivery pendiente.
+  if (result === 'failure' && !['PAID', 'REFUNDED'].includes(payment.status)) {
+    return prisma.$transaction(async tx => {
+      const failed = await tx.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } })
+      await tx.order.update({ where: { id: orderId }, data: { status: 'CANCELLED' } })
+      return failed
+    })
+  }
 
   const testMode = payment.metadata?.mode === 'TEST'
 

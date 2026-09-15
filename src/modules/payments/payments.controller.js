@@ -88,12 +88,12 @@ export async function createMpTestPreference(req, res) {
 // Llamado por el frontend al volver de Mercado Pago (success/pending), para
 // reflejar el estado real sin tener que esperar al webhook.
 export async function syncMp(req, res) {
-  const { orderId, mpPaymentId } = req.body
+  const { orderId, mpPaymentId, result } = req.body
   if (!orderId) {
     return res.status(400).json({ success: false, message: 'El campo orderId es requerido' })
   }
 
-  const data = await svc.syncMercadoPago({ orderId, userId: req.user.id, mpPaymentId })
+  const data = await svc.syncMercadoPago({ orderId, userId: req.user.id, mpPaymentId, result })
 
   res.json({ success: true, data })
 }
