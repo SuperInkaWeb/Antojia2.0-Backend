@@ -36,5 +36,6 @@ router.get('/payments',         ctrl.listPayments)
 router.get('/drivers',                    ctrl.listDrivers)
 router.patch('/drivers/:id/verify',       ctrl.verifyDriver)
 router.patch('/drivers/:id/suspend',      ctrl.suspendDriver)
+router.patch('/drivers/:id/activate',     ctrl.activateDriver)
 
 export default router

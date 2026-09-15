@@ -463,3 +463,13 @@ export async function suspendDriver(id) {
     include: { user: { select: { name: true, email: true } } },
   })
 }
+
+export async function activateDriver(id) {
+  const driver = await prisma.deliveryDriver.findUnique({ where: { id } })
+  if (!driver) throw new AppError('Repartidor no encontrado', 404)
+  if (driver.status !== 'SUSPENDED') return driver
+  return prisma.deliveryDriver.update({
+    where: { id }, data: { status: 'OFFLINE' },
+    include: { user: { select: { name: true, email: true } } },
+  })
+}

@@ -82,3 +82,8 @@ export const suspendDriver = async (req, res) => {
   const data = await svc.suspendDriver(req.params.id)
   res.json({ success: true, message: 'Repartidor suspendido', data })
 }
+
+export const activateDriver = async (req, res) => {
+  const data = await svc.activateDriver(req.params.id)
+  res.json({ success: true, message: 'Repartidor activado', data })
+}
