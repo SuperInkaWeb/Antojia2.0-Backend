@@ -338,11 +338,15 @@ export async function listByRestaurant(restaurantId, userId, role, query) {
     prisma.order.count({ where }),
   ])
 
-  const restaurantOrders = data.map(order => {
+  const restaurantOrders = data
+    // Oculta intentos antiguos abandonados: pago pendiente y pedido nunca
+    // confirmado. Los pedidos que sí avanzaron se conservan como ventas.
+    .filter(order => !(order.payment?.status === 'PENDING' && order.status === 'PENDING'))
+    .map(order => {
     if (!order.payment) return hideDeliveryCode(order)
     const { metadata, ...payment } = order.payment
     return hideDeliveryCode({ ...order, payment: { ...payment, isTest: metadata?.mode === 'TEST' } })
-  })
+    })
 
   return { data: restaurantOrders, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } }
 }
