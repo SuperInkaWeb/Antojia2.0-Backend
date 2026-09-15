@@ -127,13 +127,15 @@ export async function getWallet(restaurantId, userId) {
   const [settings, paidPayments] = await Promise.all([
     prisma.platformSettings.findUnique({ where: { id: 'main' }, select: { commissionPercent: true } }),
     prisma.payment.findMany({
-      where: { status: 'PAID', method: 'MERCADOPAGO', order: { restaurantId, status: { not: 'CANCELLED' } } },
-      select: { amount: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+      where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO', order: { restaurantId, status: { not: 'CANCELLED' } } },
+      select: { amount: true, status: true, metadata: true, order: { select: { status: true, subtotal: true, discountAmount: true } } },
     }),
   ])
   const commissionPercent = settings?.commissionPercent ?? 20
-  const productionPayments = paidPayments.filter(payment => payment.metadata?.mode !== 'TEST')
-  const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST')
+  const productionPayments = paidPayments.filter(payment => payment.status === 'PAID' && payment.metadata?.mode !== 'TEST')
+  // Los pagos sandbox antiguos pueden quedar PENDING aunque el pedido de prueba
+  // sí haya avanzado; se muestran como simulación, nunca como saldo retirable.
+  const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST' && (payment.status === 'PAID' || payment.order.status !== 'PENDING'))
   const saleAmount = payment => Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
   const salesTotal = productionPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)
   const testSalesTotal = testPayments.reduce((sum, payment) => sum + saleAmount(payment), 0)

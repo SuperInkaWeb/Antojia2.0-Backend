@@ -293,8 +293,11 @@ export async function processMercadoPagoUpdate(mpPaymentId, { testMode = false }
 
   const [updatedPayment] = await prisma.$transaction([
     prisma.payment.update({ where: { id: payment.id }, data: updateData }),
-    ...(newStatus === 'PAID'
-      ? [prisma.order.update({ where: { id: payment.orderId }, data: { status: 'CONFIRMED' } })]
+    ...(['PAID', 'FAILED'].includes(newStatus)
+      ? [prisma.order.update({
+          where: { id: payment.orderId },
+          data: { status: newStatus === 'PAID' ? 'CONFIRMED' : 'CANCELLED' },
+        })]
       : []),
   ])
 

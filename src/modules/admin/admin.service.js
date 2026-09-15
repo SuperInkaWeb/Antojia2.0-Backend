@@ -48,19 +48,20 @@ export async function getMetrics() {
   const [settings, paidPayments] = await Promise.all([
     getPlatformSettings(),
     prisma.payment.findMany({
-      where: { status: 'PAID', method: 'MERCADOPAGO', order: { status: { not: 'CANCELLED' } } },
-      select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+      where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO', order: { status: { not: 'CANCELLED' } } },
+      select: { amount: true, status: true, paidAt: true, createdAt: true, metadata: true, order: { select: { status: true, subtotal: true, discountAmount: true } } },
     }),
   ])
-  const productionPayments = paidPayments.filter(payment => payment.metadata?.mode !== 'TEST')
-  const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST')
+  const productionPayments = paidPayments.filter(payment => payment.status === 'PAID' && payment.metadata?.mode !== 'TEST')
+  const testPayments = paidPayments.filter(payment => payment.metadata?.mode === 'TEST' && (payment.status === 'PAID' || payment.order.status !== 'PENDING'))
+  const recordedPayments = [...productionPayments, ...testPayments]
   const byPaidDate = (payment) => payment.paidAt || payment.createdAt
   const grossSales = payment => restaurantSales(payment)
   // Las ventas sandbox también se muestran como ingreso simulado para que
   // las compras hechas durante las pruebas no desaparezcan del dashboard.
-  const revThisMonth = paidPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
+  const revThisMonth = recordedPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
     .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
-  const revLastMonth = paidPayments.filter(payment => byPaidDate(payment) >= startOfLast && byPaidDate(payment) <= endOfLast)
+  const revLastMonth = recordedPayments.filter(payment => byPaidDate(payment) >= startOfLast && byPaidDate(payment) <= endOfLast)
     .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
   const testSalesThisMonth = testPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
     .reduce((sum, payment) => sum + grossSales(payment), 0)
@@ -88,7 +89,7 @@ export async function getMetrics() {
       avgTicket: parseFloat(avgTicket.toFixed(2)),
       commissionPercent: settings.commissionPercent,
       paidPayments: productionPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
-      recordedSalesThisMonth: Number(paidPayments.filter(payment => byPaidDate(payment) >= startOfMonth).reduce((sum, payment) => sum + grossSales(payment), 0).toFixed(2)),
+      recordedSalesThisMonth: Number(recordedPayments.filter(payment => byPaidDate(payment) >= startOfMonth).reduce((sum, payment) => sum + grossSales(payment), 0).toFixed(2)),
       testSalesThisMonth: Number(testSalesThisMonth.toFixed(2)),
       testAdminCommissionThisMonth: Number(testAdminCommissionThisMonth.toFixed(2)),
       testPaymentsThisMonth: testPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
@@ -173,7 +174,7 @@ export async function getRestaurantSettlements() {
         owner: { select: { name: true, email: true } },
         payouts: { select: { grossAmount: true, commissionAmount: true, netAmount: true, commissionPercent: true, createdAt: true } },
         withdrawals: { select: { id: true, amount: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, bankDetailsEncrypted: true, transferReference: true, createdAt: true, paidAt: true }, orderBy: { createdAt: 'desc' } },
-        orders: { where: { status: { not: 'CANCELLED' } }, select: { payment: { where: { status: 'PAID', method: 'MERCADOPAGO' }, select: { amount: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } } } } },
+        orders: { where: { status: { not: 'CANCELLED' } }, select: { status: true, payment: { where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO' }, select: { amount: true, status: true, metadata: true, order: { select: { status: true, subtotal: true, discountAmount: true } } } } } },
       },
     }),
     prisma.restaurantWithdrawal.findMany({ where: { status: 'PENDING' }, include: { restaurant: { select: { id: true, name: true } } }, orderBy: { createdAt: 'asc' } }),
@@ -181,8 +182,8 @@ export async function getRestaurantSettlements() {
   return {
     commissionPercent: settings.commissionPercent,
     restaurants: restaurants.map(restaurant => {
-      const paidPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.metadata?.mode !== 'TEST')
-      const testPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.metadata?.mode === 'TEST')
+      const paidPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.status === 'PAID' && payment.metadata?.mode !== 'TEST')
+      const testPayments = restaurant.orders.flatMap(order => order.payment).filter(payment => payment.metadata?.mode === 'TEST' && (payment.status === 'PAID' || payment.order.status !== 'PENDING'))
       const salesTotal = paidPayments.reduce((sum, payment) => sum + restaurantSales(payment), 0)
       const testSalesTotal = testPayments.reduce((sum, payment) => sum + restaurantSales(payment), 0)
       const recordedSalesTotal = salesTotal + testSalesTotal
