@@ -150,11 +150,12 @@ export async function registerAdmin(req, res) {
 }
 
 export async function registerMarketingAdmin(req, res) {
-  if (req.user.role === 'MARKETING_ADMIN') return res.json({ success: true, data: { role: req.user.role } })
   if (req.user.role === 'ADMIN') throw new AppError('La cuenta ya es administradora principal', 409)
+  const email = String(req.user.email || '').trim().toLowerCase()
+  const invite = await prisma.marketingAdminInvite.findUnique({ where: { email } })
+  if (!invite || invite.status !== 'APPROVED') throw new AppError('El administrador principal todavía no aprobó este correo', 403)
+  if (req.user.role === 'MARKETING_ADMIN') return res.json({ success: true, data: { role: req.user.role } })
   const user = await prisma.$transaction(async tx => {
-    const count = await tx.user.count({ where: { role: 'MARKETING_ADMIN' } })
-    if (count >= 2) throw new AppError('Ya se alcanzó el máximo de 2 administradores de marketing', 409)
     const updated = await tx.user.update({ where: { id: req.user.id }, data: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, role: true } })
     await tx.adminSession.create({ data: { userId: req.user.id } })
     return updated

@@ -65,6 +65,10 @@ export async function loadUser(req, res, next) {
     if (!user.isActive) {
       return res.status(403).json({ success: false, message: 'Cuenta suspendida. Contacta soporte.' })
     }
+    if (user.role === 'MARKETING_ADMIN') {
+      const invite = await prisma.marketingAdminInvite.findUnique({ where: { email: String(user.email).toLowerCase() }, select: { status: true } })
+      if (invite?.status !== 'APPROVED') return res.status(403).json({ success: false, message: 'El acceso de marketing no está aprobado.' })
+    }
 
     // Guardar en cache
     cacheSet(cacheKey, user, USER_CACHE_TTL)

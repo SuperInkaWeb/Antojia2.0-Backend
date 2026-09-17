@@ -40,5 +40,8 @@ router.patch('/drivers/:id/activate',     ctrl.activateDriver)
 
 // Historial visible únicamente para el administrador principal.
 router.get('/marketing-admins', ctrl.listMarketingAdmins)
+router.post('/marketing-admins', ctrl.createMarketingAdminInvite)
+router.patch('/marketing-admins/:id/approve', ctrl.approveMarketingAdminInvite)
+router.patch('/marketing-admins/:id/suspend', ctrl.suspendMarketingAdminInvite)
 
 export default router

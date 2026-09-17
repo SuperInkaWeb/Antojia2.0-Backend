@@ -16,6 +16,12 @@ enum Role {
   MARKETING_ADMIN
 }
 
+enum MarketingAdminInviteStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
 enum OrderType {
   DELIVERY
   RESERVATION
@@ -102,6 +108,18 @@ model AdminSession {
 
   @@index([userId, startedAt])
   @@map("admin_sessions")
+}
+
+model MarketingAdminInvite {
+  id            String                     @id @default(uuid())
+  email         String                     @unique
+  status        MarketingAdminInviteStatus @default(PENDING)
+  createdByEmail String
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  @@index([status])
+  @@map("marketing_admin_invites")
 }
 
 model Restaurant {
