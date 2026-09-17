@@ -7,6 +7,10 @@ const router = Router()
 router.use(authenticate, authorize('MARKETING_ADMIN'))
 router.get('/analytics', ctrl.getMarketingAnalytics)
 router.get('/settlements', async (_req, res) => res.json({ success: true, data: await svc.getRestaurantSettlements() }))
+router.post('/settlements/restaurants/:id/credit', async (req, res) => {
+  const data = await svc.creditRestaurant(req.params.id)
+  res.status(201).json({ success: true, message: 'Saldo acreditado al restaurante', data })
+})
 router.patch('/settlements/withdrawals/:id/paid', async (req, res) => {
   const data = await svc.markWithdrawalPaid(req.params.id, req.body.transferReference)
   res.json({ success: true, message: 'Retiro marcado como transferido', data })

@@ -233,7 +233,7 @@ export async function getMarketingAnalytics(period = 'month') {
   const [settings, restaurants, payments] = await Promise.all([
     getPlatformSettings(),
     prisma.restaurant.findMany({ select: { id: true, name: true, createdAt: true } }),
-    prisma.payment.findMany({ where: { status: 'PAID', method: 'MERCADOPAGO', paidAt: { gte: start }, order: { status: { not: 'CANCELLED' } } }, select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { restaurantId: true, subtotal: true, discountAmount: true } } } }),
+    prisma.payment.findMany({ where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO', OR: [{ paidAt: { gte: start } }, { createdAt: { gte: start } }], order: { status: { not: 'CANCELLED' } } }, select: { amount: true, status: true, paidAt: true, createdAt: true, metadata: true, order: { select: { restaurantId: true, subtotal: true, discountAmount: true, status: true } } } }),
   ])
   const step = period === 'week' ? 'week' : period === 'month' ? 'month' : 'year'
   const bucket = date => {
@@ -245,25 +245,43 @@ export async function getMarketingAnalytics(period = 'month') {
     return step === 'month' ? date.toISOString().slice(0, 7) : String(date.getUTCFullYear())
   }
   const timeline = new Map()
-  for (const payment of payments.filter(p => p.metadata?.mode !== 'TEST')) {
+  const realPayments = payments.filter(p => p.status === 'PAID' && p.metadata?.mode !== 'TEST')
+  const testPayments = payments.filter(p => p.metadata?.mode === 'TEST' && (p.status === 'PAID' || p.order.status !== 'PENDING'))
+  for (const payment of realPayments) {
     const date = payment.paidAt || payment.createdAt
     const key = bucket(date)
-    const row = timeline.get(key) || { period: key, sales: 0, adminEarnings: 0, orders: 0 }
+    const row = timeline.get(key) || { period: key, sales: 0, adminEarnings: 0, orders: 0, testSales: 0, testAdminEarnings: 0, testOrders: 0 }
     const sales = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
     row.sales += sales
     row.adminEarnings += sales * settings.commissionPercent / 100
     row.orders += 1
     timeline.set(key, row)
   }
-  const restaurantTotals = new Map(restaurants.map(r => [r.id, { id: r.id, name: r.name, sales: 0, orders: 0 }]))
-  for (const payment of payments.filter(p => p.metadata?.mode !== 'TEST')) {
+  for (const payment of testPayments) {
+    const date = payment.paidAt || payment.createdAt
+    const key = bucket(date)
+    const row = timeline.get(key) || { period: key, sales: 0, adminEarnings: 0, orders: 0, testSales: 0, testAdminEarnings: 0, testOrders: 0 }
+    const sales = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    row.testSales += sales
+    row.testAdminEarnings += sales * settings.commissionPercent / 100
+    row.testOrders += 1
+    timeline.set(key, row)
+  }
+  const restaurantTotals = new Map(restaurants.map(r => [r.id, { id: r.id, name: r.name, sales: 0, orders: 0, testSales: 0, testOrders: 0 }]))
+  for (const payment of realPayments) {
     const row = restaurantTotals.get(payment.order.restaurantId)
     if (!row) continue
     row.sales += Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
     row.orders += 1
   }
-  const data = [...timeline.values()].sort((a, b) => a.period.localeCompare(b.period)).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)), adminEarnings: Number(row.adminEarnings.toFixed(2)) }))
-  return { period, step, commissionPercent: settings.commissionPercent, totalRestaurants: restaurants.length, totalSales: Number(data.reduce((sum, row) => sum + row.sales, 0).toFixed(2)), adminEarnings: Number(data.reduce((sum, row) => sum + row.adminEarnings, 0).toFixed(2)), timeline: data, restaurants: [...restaurantTotals.values()].sort((a, b) => b.sales - a.sales).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)) })) }
+  for (const payment of testPayments) {
+    const row = restaurantTotals.get(payment.order.restaurantId)
+    if (!row) continue
+    row.testSales += Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    row.testOrders += 1
+  }
+  const data = [...timeline.values()].sort((a, b) => a.period.localeCompare(b.period)).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)), adminEarnings: Number(row.adminEarnings.toFixed(2)), testSales: Number(row.testSales.toFixed(2)), testAdminEarnings: Number(row.testAdminEarnings.toFixed(2)) }))
+  return { period, step, commissionPercent: settings.commissionPercent, totalRestaurants: restaurants.length, totalSales: Number(data.reduce((sum, row) => sum + row.sales, 0).toFixed(2)), adminEarnings: Number(data.reduce((sum, row) => sum + row.adminEarnings, 0).toFixed(2)), testSales: Number(data.reduce((sum, row) => sum + row.testSales, 0).toFixed(2)), testAdminEarnings: Number(data.reduce((sum, row) => sum + row.testAdminEarnings, 0).toFixed(2)), timeline: data, restaurants: [...restaurantTotals.values()].sort((a, b) => b.sales - a.sales).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)), testSales: Number(row.testSales.toFixed(2)) })) }
 }
 
 export async function listMarketingAdmins(period = 'month') {
