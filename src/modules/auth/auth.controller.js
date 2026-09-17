@@ -16,6 +16,10 @@ export async function sync(req, res) {
     avatarUrl: picture,
   })
 
+  if (user.role === 'ADMIN' || user.role === 'MARKETING_ADMIN') {
+    await prisma.adminSession.create({ data: { userId: user.id } })
+  }
+
   res.status(isNew ? 201 : 200).json({
     success: true,
     message: isNew ? 'Usuario creado' : 'Usuario sincronizado',
@@ -129,6 +133,7 @@ export async function registerAdmin(req, res) {
     where: { role: 'ADMIN' },
     select: { id: true },
   })
+
   if (existingAdmin && existingAdmin.id !== req.user.id) {
     throw new AppError('Ya existe un administrador registrado en la plataforma', 409)
   }
@@ -138,7 +143,28 @@ export async function registerAdmin(req, res) {
     data: { role: 'ADMIN' },
     select: { id: true, name: true, email: true, role: true },
   })
+  await prisma.adminSession.create({ data: { userId: user.id } })
   invalidateUserCache(req.user.auth0Id)
 
   res.json({ success: true, message: 'Administrador registrado correctamente', data: user })
+}
+
+export async function registerMarketingAdmin(req, res) {
+  if (req.user.role === 'MARKETING_ADMIN') return res.json({ success: true, data: { role: req.user.role } })
+  if (req.user.role === 'ADMIN') throw new AppError('La cuenta ya es administradora principal', 409)
+  const user = await prisma.$transaction(async tx => {
+    const count = await tx.user.count({ where: { role: 'MARKETING_ADMIN' } })
+    if (count >= 2) throw new AppError('Ya se alcanzó el máximo de 2 administradores de marketing', 409)
+    const updated = await tx.user.update({ where: { id: req.user.id }, data: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, role: true } })
+    await tx.adminSession.create({ data: { userId: req.user.id } })
+    return updated
+  }, { isolationLevel: 'Serializable' })
+  invalidateUserCache(req.user.auth0Id)
+  res.json({ success: true, message: 'Administrador de marketing registrado', data: user })
+}
+
+export async function endAdminSession(req, res) {
+  const session = await prisma.adminSession.findFirst({ where: { userId: req.user.id, endedAt: null }, orderBy: { startedAt: 'desc' } })
+  if (session) await prisma.adminSession.update({ where: { id: session.id }, data: { endedAt: new Date() } })
+  res.json({ success: true })
 }

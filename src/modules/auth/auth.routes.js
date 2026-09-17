@@ -17,6 +17,8 @@ router.patch('/me', authenticate, ctrl.updateMe)
 
 // Alta del único administrador autorizado, sin SQL manual.
 router.post('/register-admin', authenticate, ctrl.registerAdmin)
+router.post('/register-marketing-admin', authenticate, ctrl.registerMarketingAdmin)
+router.post('/admin-session/end', authenticate, ctrl.endAdminSession)
 
 // ── Cambiar rol (solo admin) ─────────────────────────────────
 router.patch('/users/:id/role', authenticate, authorize('ADMIN'), ctrl.changeRole)

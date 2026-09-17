@@ -221,6 +221,61 @@ export async function getRestaurantSettlements() {
   }
 }
 
+export async function getMarketingAnalytics(period = 'month') {
+  const allowed = ['week', 'month', 'year']
+  if (!allowed.includes(period)) period = 'month'
+  const now = new Date()
+  const start = new Date(now)
+  if (period === 'week') start.setDate(start.getDate() - 84)
+  if (period === 'month') start.setMonth(start.getMonth() - 12)
+  if (period === 'year') start.setFullYear(start.getFullYear() - 5)
+  const [settings, restaurants, payments] = await Promise.all([
+    getPlatformSettings(),
+    prisma.restaurant.findMany({ select: { id: true, name: true, createdAt: true } }),
+    prisma.payment.findMany({ where: { status: 'PAID', method: 'MERCADOPAGO', paidAt: { gte: start }, order: { status: { not: 'CANCELLED' } } }, select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { restaurantId: true, subtotal: true, discountAmount: true } } } }),
+  ])
+  const step = period === 'week' ? 'week' : period === 'month' ? 'month' : 'year'
+  const bucket = date => {
+    if (step === 'week') {
+      const monday = new Date(date)
+      monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+      return monday.toISOString().slice(0, 10)
+    }
+    return step === 'month' ? date.toISOString().slice(0, 7) : String(date.getUTCFullYear())
+  }
+  const timeline = new Map()
+  for (const payment of payments.filter(p => p.metadata?.mode !== 'TEST')) {
+    const date = payment.paidAt || payment.createdAt
+    const key = bucket(date)
+    const row = timeline.get(key) || { period: key, sales: 0, adminEarnings: 0, orders: 0 }
+    const sales = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    row.sales += sales
+    row.adminEarnings += sales * settings.commissionPercent / 100
+    row.orders += 1
+    timeline.set(key, row)
+  }
+  const restaurantTotals = new Map(restaurants.map(r => [r.id, { id: r.id, name: r.name, sales: 0, orders: 0 }]))
+  for (const payment of payments.filter(p => p.metadata?.mode !== 'TEST')) {
+    const row = restaurantTotals.get(payment.order.restaurantId)
+    if (!row) continue
+    row.sales += Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    row.orders += 1
+  }
+  const data = [...timeline.values()].sort((a, b) => a.period.localeCompare(b.period)).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)), adminEarnings: Number(row.adminEarnings.toFixed(2)) }))
+  return { period, step, commissionPercent: settings.commissionPercent, totalRestaurants: restaurants.length, totalSales: Number(data.reduce((sum, row) => sum + row.sales, 0).toFixed(2)), adminEarnings: Number(data.reduce((sum, row) => sum + row.adminEarnings, 0).toFixed(2)), timeline: data, restaurants: [...restaurantTotals.values()].sort((a, b) => b.sales - a.sales).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)) })) }
+}
+
+export async function listMarketingAdmins(period = 'month') {
+  const end = new Date()
+  const start = new Date(end)
+  if (period === 'day') start.setDate(start.getDate() - 1)
+  else if (period === 'week') start.setDate(start.getDate() - 7)
+  else if (period === 'year') start.setFullYear(start.getFullYear() - 1)
+  else start.setMonth(start.getMonth() - 1)
+  const users = await prisma.user.findMany({ where: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: { startedAt: { gte: start, lte: end } }, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
+  return { period, total: await prisma.user.count({ where: { role: 'MARKETING_ADMIN' } }), admins: users }
+}
+
 export async function updateCommissionPercent(value) {
   const commissionPercent = Number(value)
   if (!Number.isInteger(commissionPercent) || commissionPercent < 20 || commissionPercent > 40) {

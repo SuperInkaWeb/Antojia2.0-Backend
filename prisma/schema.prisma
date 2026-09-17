@@ -13,6 +13,7 @@ enum Role {
   RESTAURANT_OWNER
   DELIVERY
   ADMIN
+  MARKETING_ADMIN
 }
 
 enum OrderType {
@@ -86,9 +87,21 @@ model User {
   driverProfile   DeliveryDriver?
   consumerProfile ConsumerProfile?
   driverRatings   DriverRating[] @relation("DriverRatingConsumer")
+  adminSessions   AdminSession[]
 
   @@index([role])
   @@map("users")
+}
+
+model AdminSession {
+  id        String   @id @default(uuid())
+  userId    String
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@map("admin_sessions")
 }
 
 model Restaurant {

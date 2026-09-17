@@ -5,6 +5,8 @@ export const getMetrics      = async (req, res) => res.json({ success: true, dat
 export const getRevenueChart = async (req, res) => res.json({ success: true, data: await svc.getRevenueChart() })
 export const getPaymentSummary = async (req, res) => res.json({ success: true, data: await svc.getPaymentSummary() })
 export const getRestaurantSettlements = async (req, res) => res.json({ success: true, data: await svc.getRestaurantSettlements() })
+export const getMarketingAnalytics = async (req, res) => res.json({ success: true, data: await svc.getMarketingAnalytics(req.query.period) })
+export const listMarketingAdmins = async (req, res) => res.json({ success: true, data: await svc.listMarketingAdmins(req.query.period) })
 
 export const updateCommissionPercent = async (req, res) => {
   const data = await svc.updateCommissionPercent(req.body.commissionPercent)

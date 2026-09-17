@@ -1,0 +1,15 @@
+import { Router } from 'express'
+import { authenticate, authorize } from '../../middleware/auth.middleware.js'
+import * as ctrl from './admin.controller.js'
+import * as svc from './admin.service.js'
+
+const router = Router()
+router.use(authenticate, authorize('MARKETING_ADMIN'))
+router.get('/analytics', ctrl.getMarketingAnalytics)
+router.get('/settlements', async (_req, res) => res.json({ success: true, data: await svc.getRestaurantSettlements() }))
+router.patch('/settlements/withdrawals/:id/paid', async (req, res) => {
+  const data = await svc.markWithdrawalPaid(req.params.id, req.body.transferReference)
+  res.json({ success: true, message: 'Retiro marcado como transferido', data })
+})
+
+export default router

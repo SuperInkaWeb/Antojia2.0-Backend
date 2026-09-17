@@ -38,4 +38,7 @@ router.patch('/drivers/:id/verify',       ctrl.verifyDriver)
 router.patch('/drivers/:id/suspend',      ctrl.suspendDriver)
 router.patch('/drivers/:id/activate',     ctrl.activateDriver)
 
+// Historial visible únicamente para el administrador principal.
+router.get('/marketing-admins', ctrl.listMarketingAdmins)
+
 export default router
