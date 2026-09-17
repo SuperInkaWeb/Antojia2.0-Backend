@@ -119,6 +119,7 @@ app.use((err, req, res, _next) => {
   if (err.status === 401) return res.status(401).json({ success: false, message: 'Token inválido o expirado' })
   if (err.status === 403) return res.status(403).json({ success: false, message: 'Sin permisos' })
   if (err.code   === 'P2002') return res.status(409).json({ success: false, message: 'Ya existe un registro con esos datos' })
+  if (err.code === 'P2021' || err.code === 'P2022') return res.status(503).json({ success: false, message: 'Falta actualizar el esquema de la base de datos. Ejecuta npm run db:migrate en el backend.' })
   if (err.isOperational) {
     return res.status(err.statusCode).json({
       success: false,

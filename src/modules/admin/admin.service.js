@@ -293,7 +293,7 @@ const publicInvite = (invite, token) => ({ id: invite.id, email: invite.email, s
 export async function createMarketingAdminInvite(createdByEmail) {
   const token = createInviteToken()
   return prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(78124020)`
+    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(78124020)) AS invite_lock`
     const count = await tx.marketingAdminInvite.count()
     if (count >= 2) throw new AppError('Ya se crearon las 2 cuentas permitidas de marketing', 409)
     const invite = await tx.marketingAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
