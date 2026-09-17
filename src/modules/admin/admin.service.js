@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database.js'
 import { AppError } from '../../shared/utils/appError.js'
 import { decryptSensitiveData } from '../../shared/utils/sensitiveData.js'
+import { createHash, randomBytes } from 'node:crypto'
 
 function paginate(query) {
   const page  = parseInt(query.page)  || 1
@@ -274,25 +275,45 @@ export async function listMarketingAdmins(period = 'month') {
   else start.setMonth(start.getMonth() - 1)
   const users = await prisma.user.findMany({ where: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: { startedAt: { gte: start, lte: end } }, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
   const invites = await prisma.marketingAdminInvite.findMany({ orderBy: { createdAt: 'asc' } })
-  const registeredUsers = invites.length
-    ? await prisma.user.findMany({ where: { OR: invites.map(invite => ({ email: { equals: invite.email, mode: 'insensitive' } })) }, select: { email: true, name: true } })
+  const emailInvites = invites.filter(invite => invite.email)
+  const registeredUsers = emailInvites.length
+    ? await prisma.user.findMany({ where: { OR: emailInvites.map(invite => ({ email: { equals: invite.email, mode: 'insensitive' } })) }, select: { email: true, name: true } })
     : []
   const registeredByEmail = new Map(registeredUsers.map(user => [user.email.toLowerCase(), user]))
-  const invitations = invites.map(invite => ({ ...invite, accountCreated: registeredByEmail.has(invite.email.toLowerCase()), name: registeredByEmail.get(invite.email.toLowerCase())?.name || null }))
+  const marketingAdminsByEmail = new Map(users.map(user => [user.email.toLowerCase(), user]))
+  const invitations = invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > end), accountCreated: Boolean(invite.email && registeredByEmail.has(invite.email.toLowerCase())), isMarketingAdmin: Boolean(invite.email && marketingAdminsByEmail.has(invite.email.toLowerCase())), name: invite.email ? registeredByEmail.get(invite.email.toLowerCase())?.name || null : null }))
   return { period, total: users.length, slotsUsed: invites.length, limit: 2, invites: invitations, admins: users }
 }
 
-export async function createMarketingAdminInvite(email, createdByEmail) {
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new AppError('Ingresa un correo válido', 400)
+const createInviteToken = () => randomBytes(32).toString('base64url')
+const hashInviteToken = token => createHash('sha256').update(token).digest('hex')
+const inviteTokenExpiresAt = () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+const publicInvite = (invite, token) => ({ id: invite.id, email: invite.email, status: invite.status, createdAt: invite.createdAt, tokenExpiresAt: invite.tokenExpiresAt, registrationToken: token })
+
+export async function createMarketingAdminInvite(createdByEmail) {
+  const token = createInviteToken()
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(78124020)`
     const count = await tx.marketingAdminInvite.count()
     if (count >= 2) throw new AppError('Ya se crearon las 2 cuentas permitidas de marketing', 409)
-    const primaryAdmin = await tx.user.findFirst({ where: { role: 'ADMIN', email: { equals: normalizedEmail, mode: 'insensitive' } }, select: { id: true } })
-    if (primaryAdmin) throw new AppError('No puedes usar el correo del administrador principal', 409)
-    return tx.marketingAdminInvite.create({ data: { email: normalizedEmail, createdByEmail, status: 'PENDING' } })
+    const invite = await tx.marketingAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+    return publicInvite(invite, token)
   })
+}
+
+export async function refreshMarketingAdminLink(id) {
+  const current = await prisma.marketingAdminInvite.findUnique({ where: { id } })
+  if (!current) throw new AppError('Invitación de marketing no encontrada', 404)
+  if (current.status === 'SUSPENDED') throw new AppError('Reactiva la invitación antes de renovar el enlace', 409)
+  if (current.status !== 'APPROVED') throw new AppError('Aprueba la cuenta antes de generar el enlace', 409)
+  if (current.email) {
+    const existingUser = await prisma.user.findFirst({ where: { email: { equals: current.email, mode: 'insensitive' }, role: { in: ['ADMIN', 'MARKETING_ADMIN'] } }, select: { role: true } })
+    if (existingUser?.role === 'MARKETING_ADMIN') throw new AppError('Esta cuenta ya se registró; no necesita otro enlace', 409)
+    if (existingUser?.role === 'ADMIN') throw new AppError('No puedes invitar al administrador principal como administrador de marketing', 409)
+  }
+  const token = createInviteToken()
+  const invite = await prisma.marketingAdminInvite.update({ where: { id }, data: { tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+  return publicInvite(invite, token)
 }
 
 export async function setMarketingAdminInviteStatus(id, status) {
@@ -300,7 +321,7 @@ export async function setMarketingAdminInviteStatus(id, status) {
   if (!invite) throw new AppError('Cuenta de marketing no encontrada', 404)
   const updated = await prisma.$transaction(async tx => {
     const result = await tx.marketingAdminInvite.update({ where: { id }, data: { status } })
-    const matchingUser = await tx.user.findFirst({ where: { email: { equals: invite.email, mode: 'insensitive' } }, select: { id: true, auth0Id: true, role: true } })
+    const matchingUser = invite.email ? await tx.user.findFirst({ where: { email: { equals: invite.email, mode: 'insensitive' } }, select: { id: true, auth0Id: true, role: true } }) : null
     if (matchingUser) {
       if (status === 'APPROVED' && matchingUser.role === 'ADMIN') throw new AppError('El correo pertenece al administrador principal', 409)
       if (status === 'APPROVED') await tx.user.update({ where: { id: matchingUser.id }, data: { role: 'MARKETING_ADMIN', isActive: true } })
@@ -308,7 +329,7 @@ export async function setMarketingAdminInviteStatus(id, status) {
     }
     return { invite: result, auth0Id: matchingUser?.auth0Id }
   })
-  return { ...updated.invite, auth0Id: updated.auth0Id }
+  return { id: updated.invite.id, email: updated.invite.email, status: updated.invite.status, auth0Id: updated.auth0Id }
 }
 
 export async function updateCommissionPercent(value) {

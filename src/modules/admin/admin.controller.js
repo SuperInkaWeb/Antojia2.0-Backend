@@ -9,8 +9,12 @@ export const getRestaurantSettlements = async (req, res) => res.json({ success: 
 export const getMarketingAnalytics = async (req, res) => res.json({ success: true, data: await svc.getMarketingAnalytics(req.query.period) })
 export const listMarketingAdmins = async (req, res) => res.json({ success: true, data: await svc.listMarketingAdmins(req.query.period) })
 export const createMarketingAdminInvite = async (req, res) => {
-  const data = await svc.createMarketingAdminInvite(req.body.email, req.user.email)
-  res.status(201).json({ success: true, message: 'Correo agregado. Apruébalo para habilitar el acceso.', data })
+  const data = await svc.createMarketingAdminInvite(req.user.email)
+  res.status(201).json({ success: true, message: 'Enlace de registro creado', data })
+}
+export const refreshMarketingAdminLink = async (req, res) => {
+  const data = await svc.refreshMarketingAdminLink(req.params.id)
+  res.json({ success: true, message: 'Enlace de registro renovado', data })
 }
 export const approveMarketingAdminInvite = async (req, res) => {
   const data = await svc.setMarketingAdminInviteStatus(req.params.id, 'APPROVED')

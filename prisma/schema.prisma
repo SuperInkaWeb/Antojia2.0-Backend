@@ -112,7 +112,9 @@ model AdminSession {
 
 model MarketingAdminInvite {
   id            String                     @id @default(uuid())
-  email         String                     @unique
+  email         String?                    @unique
+  tokenHash     String?                    @unique
+  tokenExpiresAt DateTime?
   status        MarketingAdminInviteStatus @default(PENDING)
   createdByEmail String
   createdAt     DateTime                   @default(now())

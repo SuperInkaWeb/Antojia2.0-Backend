@@ -3,6 +3,7 @@ import { prisma } from '../../config/database.js'
 import { getIdentityClaims } from '../../config/auth0.js'
 import { AppError } from '../../shared/utils/appError.js'
 import { invalidateUserCache } from '../../middleware/auth.middleware.js'
+import { createHash } from 'node:crypto'
 
 // POST /api/v1/auth/sync
 export async function sync(req, res) {
@@ -152,10 +153,24 @@ export async function registerAdmin(req, res) {
 export async function registerMarketingAdmin(req, res) {
   if (req.user.role === 'ADMIN') throw new AppError('La cuenta ya es administradora principal', 409)
   const email = String(req.user.email || '').trim().toLowerCase()
-  const invite = await prisma.marketingAdminInvite.findUnique({ where: { email } })
-  if (!invite || invite.status !== 'APPROVED') throw new AppError('El administrador principal todavía no aprobó este correo', 403)
-  if (req.user.role === 'MARKETING_ADMIN') return res.json({ success: true, data: { role: req.user.role } })
+  const token = String(req.body.inviteToken || '')
+  if (!token) throw new AppError('Abre el enlace de invitación que te compartió el administrador', 403)
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const invite = await prisma.marketingAdminInvite.findUnique({ where: { tokenHash } })
+  if (!invite || invite.status !== 'APPROVED' || !invite.tokenExpiresAt || invite.tokenExpiresAt <= new Date()) throw new AppError('El enlace de invitación no es válido o venció. Pide uno nuevo al administrador.', 403)
+  if (invite.email && invite.email.toLowerCase() !== email) throw new AppError('Este enlace ya fue usado con otro correo de Auth0', 403)
+  if (req.user.role === 'MARKETING_ADMIN') {
+    if (invite.email !== email) throw new AppError('Esta cuenta ya tiene otra invitación de marketing', 409)
+    return res.json({ success: true, data: { role: req.user.role } })
+  }
   const user = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "marketing_admin_invites" WHERE "id" = ${invite.id} FOR UPDATE`
+    const currentInvite = await tx.marketingAdminInvite.findUnique({ where: { id: invite.id } })
+    if (!currentInvite || currentInvite.status !== 'APPROVED' || !currentInvite.tokenExpiresAt || currentInvite.tokenExpiresAt <= new Date()) throw new AppError('El enlace de invitación ya no está activo', 403)
+    if (currentInvite.email && currentInvite.email.toLowerCase() !== email) throw new AppError('Este enlace ya fue usado con otro correo de Auth0', 403)
+    const anotherInvite = await tx.marketingAdminInvite.findFirst({ where: { id: { not: invite.id }, email: { equals: email, mode: 'insensitive' } }, select: { id: true } })
+    if (anotherInvite) throw new AppError('Este correo ya está asociado a otra cuenta de marketing', 409)
+    await tx.marketingAdminInvite.update({ where: { id: invite.id }, data: { email } })
     const updated = await tx.user.update({ where: { id: req.user.id }, data: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, role: true } })
     await tx.adminSession.create({ data: { userId: req.user.id } })
     return updated
