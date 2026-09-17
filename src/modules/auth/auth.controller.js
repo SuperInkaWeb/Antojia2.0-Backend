@@ -174,7 +174,7 @@ export async function registerMarketingAdmin(req, res) {
     const updated = await tx.user.update({ where: { id: req.user.id }, data: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, role: true } })
     await tx.adminSession.create({ data: { userId: req.user.id } })
     return updated
-  }, { isolationLevel: 'Serializable' })
+  })
   invalidateUserCache(req.user.auth0Id)
   res.json({ success: true, message: 'Administrador de marketing registrado', data: user })
 }
