@@ -7,7 +7,7 @@ export const getRevenueChart = async (req, res) => res.json({ success: true, dat
 export const getPaymentSummary = async (req, res) => res.json({ success: true, data: await svc.getPaymentSummary() })
 export const getRestaurantSettlements = async (req, res) => res.json({ success: true, data: await svc.getRestaurantSettlements() })
 export const getMarketingAnalytics = async (req, res) => res.json({ success: true, data: await svc.getMarketingAnalytics(req.query.period) })
-export const listMarketingAdmins = async (req, res) => res.json({ success: true, data: await svc.listMarketingAdmins(req.query.period) })
+export const listMarketingAdmins = async (req, res) => res.json({ success: true, data: await svc.listMarketingAdmins(req.query.period, req.query.date) })
 export const createMarketingAdminInvite = async (req, res) => {
   const data = await svc.createMarketingAdminInvite(req.user.email)
   res.status(201).json({ success: true, message: 'Enlace de registro creado', data })

@@ -284,14 +284,32 @@ export async function getMarketingAnalytics(period = 'month') {
   return { period, step, commissionPercent: settings.commissionPercent, totalRestaurants: restaurants.length, totalSales: Number(data.reduce((sum, row) => sum + row.sales, 0).toFixed(2)), adminEarnings: Number(data.reduce((sum, row) => sum + row.adminEarnings, 0).toFixed(2)), testSales: Number(data.reduce((sum, row) => sum + row.testSales, 0).toFixed(2)), testAdminEarnings: Number(data.reduce((sum, row) => sum + row.testAdminEarnings, 0).toFixed(2)), timeline: data, restaurants: [...restaurantTotals.values()].sort((a, b) => b.sales - a.sales).map(row => ({ ...row, sales: Number(row.sales.toFixed(2)), testSales: Number(row.testSales.toFixed(2)) })) }
 }
 
-export async function listMarketingAdmins(period = 'month') {
-  const end = new Date()
-  const start = new Date(end)
-  if (period === 'day') start.setDate(start.getDate() - 1)
-  else if (period === 'week') start.setDate(start.getDate() - 7)
-  else if (period === 'year') start.setFullYear(start.getFullYear() - 1)
-  else start.setMonth(start.getMonth() - 1)
-  const users = await prisma.user.findMany({ where: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: { startedAt: { gte: start, lte: end } }, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
+export async function listMarketingAdmins(period = 'month', selectedDate) {
+  const allowedPeriods = ['day', 'week', 'month', 'year']
+  if (!allowedPeriods.includes(period)) period = 'month'
+  const dateParts = typeof selectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+    ? selectedDate.split('-').map(Number)
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => Number(part.value))
+  const [year, month, day] = dateParts
+  const reference = new Date(Date.UTC(year, month - 1, day, 5))
+  const start = new Date(reference)
+  let end
+  if (period === 'day') {
+    end = new Date(start)
+    end.setUTCDate(end.getUTCDate() + 1)
+  } else if (period === 'week') {
+    start.setUTCDate(start.getUTCDate() - 6)
+    end = new Date(reference)
+    end.setUTCDate(end.getUTCDate() + 1)
+  } else if (period === 'month') {
+    start.setUTCDate(1)
+    end = new Date(Date.UTC(year, month, 1, 5))
+  } else {
+    start.setUTCMonth(0, 1)
+    end = new Date(Date.UTC(year + 1, 0, 1, 5))
+  }
+  const periodFilter = { OR: [{ startedAt: { gte: start, lt: end } }, { endedAt: { gte: start, lt: end } }] }
+  const users = await prisma.user.findMany({ where: { role: 'MARKETING_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: periodFilter, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
   const invites = await prisma.marketingAdminInvite.findMany({ orderBy: { createdAt: 'asc' } })
   const emailInvites = invites.filter(invite => invite.email)
   const registeredUsers = emailInvites.length
@@ -300,7 +318,7 @@ export async function listMarketingAdmins(period = 'month') {
   const registeredByEmail = new Map(registeredUsers.map(user => [user.email.toLowerCase(), user]))
   const marketingAdminsByEmail = new Map(users.map(user => [user.email.toLowerCase(), user]))
   const invitations = invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > end), accountCreated: Boolean(invite.email && registeredByEmail.has(invite.email.toLowerCase())), isMarketingAdmin: Boolean(invite.email && marketingAdminsByEmail.has(invite.email.toLowerCase())), name: invite.email ? registeredByEmail.get(invite.email.toLowerCase())?.name || null : null }))
-  return { period, total: users.length, slotsUsed: invites.length, limit: 2, invites: invitations, admins: users }
+  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, limit: 2, invites: invitations, admins: users }
 }
 
 const createInviteToken = () => randomBytes(32).toString('base64url')
