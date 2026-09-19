@@ -19,7 +19,8 @@ export async function listForTech({ audience, category, from, to, status }) {
   const createdAt = {}
   if (from) createdAt.gte = new Date(`${from}T00:00:00.000Z`)
   if (to) { const end = new Date(`${to}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 1); createdAt.lt = end }
-  return prisma.supportReport.findMany({ where: { ...(audience && { audience }), ...(category && { category }), ...(status && { status }), ...(Object.keys(createdAt).length ? { createdAt } : {}) }, orderBy: { createdAt: 'desc' }, select })
+  const statusFilter = status === 'PENDING' ? { in: ['OPEN', 'IN_PROGRESS'] } : status
+  return prisma.supportReport.findMany({ where: { ...(audience && { audience }), ...(category && { category }), ...(statusFilter && { status: statusFilter }), ...(Object.keys(createdAt).length ? { createdAt } : {}) }, orderBy: { createdAt: 'desc' }, select })
 }
 
 export async function answer(id, tech, { response, status = 'RESOLVED' }) {
