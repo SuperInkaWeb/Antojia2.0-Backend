@@ -19,12 +19,17 @@ export async function listForTech({ audience, category, from, to, status }) {
   const createdAt = {}
   if (from) createdAt.gte = new Date(`${from}T00:00:00.000Z`)
   if (to) { const end = new Date(`${to}T00:00:00.000Z`); end.setUTCDate(end.getUTCDate() + 1); createdAt.lt = end }
-  const statusFilter = status === 'PENDING' ? { in: ['OPEN', 'IN_PROGRESS'] } : status
-  return prisma.supportReport.findMany({ where: { ...(audience && { audience }), ...(category && { category }), ...(statusFilter && { status: statusFilter }), ...(Object.keys(createdAt).length ? { createdAt } : {}) }, orderBy: { createdAt: 'desc' }, select })
+  const statusWhere = status === 'PENDING'
+    ? { status: { in: ['OPEN', 'IN_PROGRESS'] }, response: null }
+    : status === 'RESOLVED'
+      ? { OR: [{ status: 'RESOLVED' }, { response: { not: null } }] }
+      : status ? { status } : {}
+  const reports = await prisma.supportReport.findMany({ where: { ...(audience && { audience }), ...(category && { category }), ...statusWhere, ...(Object.keys(createdAt).length ? { createdAt } : {}) }, orderBy: { createdAt: 'desc' }, select })
+  return reports.map(report => report.response && report.status !== 'RESOLVED' ? { ...report, status: 'RESOLVED' } : report)
 }
 
 export async function answer(id, tech, { response, status = 'RESOLVED' }) {
   if (!String(response || '').trim()) throw new AppError('La respuesta es obligatoria', 400)
   if (!['OPEN', 'IN_PROGRESS', 'RESOLVED'].includes(status)) throw new AppError('Estado inválido', 400)
-  return prisma.supportReport.update({ where: { id }, data: { response: String(response).trim(), status, answeredAt: new Date(), answeredById: tech.id }, select })
+  return prisma.supportReport.update({ where: { id }, data: { response: String(response).trim(), status: 'RESOLVED', answeredAt: new Date(), answeredById: tech.id }, select })
 }
