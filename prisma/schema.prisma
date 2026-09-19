@@ -14,12 +14,25 @@ enum Role {
   DELIVERY
   ADMIN
   MARKETING_ADMIN
+  TECH_ADMIN
 }
 
 enum MarketingAdminInviteStatus {
   PENDING
   APPROVED
   SUSPENDED
+}
+
+enum ReportAudience {
+  RESTAURANT
+  CONSUMER
+  DELIVERY
+}
+
+enum ReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
 }
 
 enum OrderType {
@@ -94,9 +107,33 @@ model User {
   consumerProfile ConsumerProfile?
   driverRatings   DriverRating[] @relation("DriverRatingConsumer")
   adminSessions   AdminSession[]
+  reports         SupportReport[] @relation("ReportAuthor")
+  answeredReports  SupportReport[] @relation("ReportAnswerer")
 
   @@index([role])
   @@map("users")
+}
+
+model SupportReport {
+  id          String         @id @default(uuid())
+  audience    ReportAudience
+  category    String
+  description String         @db.Text
+  status      ReportStatus   @default(OPEN)
+  response    String?        @db.Text
+  answeredAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  authorId    String
+  author      User           @relation("ReportAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  answeredById String?
+  answeredBy  User?          @relation("ReportAnswerer", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([audience, category, createdAt])
+  @@index([authorId, createdAt])
+  @@index([status, createdAt])
+  @@map("support_reports")
 }
 
 model AdminSession {

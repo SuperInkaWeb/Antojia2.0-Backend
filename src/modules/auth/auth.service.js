@@ -106,7 +106,7 @@ export async function updateProfile(userId, { name, phone }) {
 
 // ── Cambiar rol ───────────────────────────────────────────────
 export async function changeRole(userId, role) {
-  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN']
+  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN', 'MARKETING_ADMIN', 'TECH_ADMIN']
   if (!validRoles.includes(role)) {
     throw new AppError('Rol inválido', 400)
   }

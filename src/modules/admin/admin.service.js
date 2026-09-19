@@ -440,7 +440,7 @@ export async function listUsers(query) {
 }
 
 export async function changeRole(userId, role) {
-  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN']
+  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN', 'MARKETING_ADMIN', 'TECH_ADMIN']
   if (!validRoles.includes(role)) throw new AppError('Rol inválido', 400)
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError('Usuario no encontrado', 404)
