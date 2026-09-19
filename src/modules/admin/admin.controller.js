@@ -28,6 +28,11 @@ export const suspendMarketingAdminInvite = async (req, res) => {
   delete data.auth0Id
   res.json({ success: true, message: 'Cuenta de marketing suspendida', data })
 }
+export const listTechAdmins = async (req, res) => res.json({ success: true, data: await svc.listTechAdmins(req.query.period, req.query.date) })
+export const createTechAdminInvite = async (req, res) => res.status(201).json({ success: true, message: 'Enlace de registro técnico creado', data: await svc.createTechAdminInvite(req.user.email) })
+export const refreshTechAdminLink = async (req, res) => res.json({ success: true, message: 'Enlace técnico renovado', data: await svc.refreshTechAdminLink(req.params.id) })
+export const approveTechAdminInvite = async (req, res) => { const data = await svc.setTechAdminInviteStatus(req.params.id, 'APPROVED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta técnica aprobada', data }) }
+export const suspendTechAdminInvite = async (req, res) => { const data = await svc.setTechAdminInviteStatus(req.params.id, 'SUSPENDED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta técnica suspendida', data }) }
 
 export const updateCommissionPercent = async (req, res) => {
   const data = await svc.updateCommissionPercent(req.body.commissionPercent)

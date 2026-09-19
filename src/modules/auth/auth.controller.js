@@ -179,6 +179,32 @@ export async function registerMarketingAdmin(req, res) {
   res.json({ success: true, message: 'Administrador de marketing registrado', data: user })
 }
 
+export async function registerTechAdmin(req, res) {
+  if (req.user.role === 'ADMIN') throw new AppError('La cuenta ya es administradora principal', 409)
+  const email = String(req.user.email || '').trim().toLowerCase()
+  const token = String(req.body.inviteToken || '')
+  if (!token) throw new AppError('Abre el enlace de invitación que te compartió el administrador', 403)
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const invite = await prisma.techAdminInvite.findUnique({ where: { tokenHash } })
+  if (!invite || invite.status !== 'APPROVED' || !invite.tokenExpiresAt || invite.tokenExpiresAt <= new Date()) throw new AppError('El enlace de invitación no es válido o venció. Pide uno nuevo al administrador.', 403)
+  if (invite.email && invite.email.toLowerCase() !== email) throw new AppError('Este enlace ya fue usado con otro correo de Auth0', 403)
+  if (req.user.role === 'TECH_ADMIN') return res.json({ success: true, data: { role: req.user.role } })
+  const user = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "tech_admin_invites" WHERE "id" = ${invite.id} FOR UPDATE`
+    const current = await tx.techAdminInvite.findUnique({ where: { id: invite.id } })
+    if (!current || current.status !== 'APPROVED' || !current.tokenExpiresAt || current.tokenExpiresAt <= new Date()) throw new AppError('El enlace de invitación ya no está activo', 403)
+    if (current.email && current.email.toLowerCase() !== email) throw new AppError('Este enlace ya fue usado con otro correo de Auth0', 403)
+    const another = await tx.techAdminInvite.findFirst({ where: { id: { not: invite.id }, email: { equals: email, mode: 'insensitive' } }, select: { id: true } })
+    if (another) throw new AppError('Este correo ya está asociado a otra cuenta técnica', 409)
+    await tx.techAdminInvite.update({ where: { id: invite.id }, data: { email } })
+    const updated = await tx.user.update({ where: { id: req.user.id }, data: { role: 'TECH_ADMIN' }, select: { id: true, name: true, email: true, role: true } })
+    await tx.adminSession.create({ data: { userId: req.user.id } })
+    return updated
+  })
+  invalidateUserCache(req.user.auth0Id)
+  res.json({ success: true, message: 'Administrador técnico registrado', data: user })
+}
+
 export async function endAdminSession(req, res) {
   const session = await prisma.adminSession.findFirst({ where: { userId: req.user.id, endedAt: null }, orderBy: { startedAt: 'desc' } })
   if (session) await prisma.adminSession.update({ where: { id: session.id }, data: { endedAt: new Date() } })

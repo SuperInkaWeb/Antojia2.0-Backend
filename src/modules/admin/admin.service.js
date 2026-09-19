@@ -368,6 +368,58 @@ export async function setMarketingAdminInviteStatus(id, status) {
   return { id: updated.invite.id, email: updated.invite.email, status: updated.invite.status, auth0Id: updated.auth0Id }
 }
 
+export async function listTechAdmins(period = 'month', selectedDate) {
+  const users = await prisma.user.findMany({ where: { role: 'TECH_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
+  const invites = await prisma.techAdminInvite.findMany({ orderBy: { createdAt: 'asc' } })
+  const emails = invites.filter(item => item.email).map(item => ({ email: { equals: item.email, mode: 'insensitive' } }))
+  const registered = emails.length ? await prisma.user.findMany({ where: { OR: emails }, select: { email: true, name: true } }) : []
+  const names = new Map(registered.map(item => [item.email.toLowerCase(), item.name]))
+  const active = new Map(users.map(item => [item.email.toLowerCase(), item]))
+  const end = new Date()
+  return { period, date: selectedDate || end.toISOString().slice(0, 10), total: users.length, slotsUsed: invites.length, limit: 2, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > end), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isTechAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
+}
+
+export async function createTechAdminInvite(createdByEmail) {
+  const token = createInviteToken()
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(78124021)) AS invite_lock`
+    if (await tx.techAdminInvite.count() >= 2) throw new AppError('Ya se crearon las 2 cuentas permitidas de adminTec', 409)
+    const invite = await tx.techAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+    return publicInvite(invite, token)
+  })
+}
+
+export async function refreshTechAdminLink(id) {
+  const current = await prisma.techAdminInvite.findUnique({ where: { id } })
+  if (!current) throw new AppError('Invitación técnica no encontrada', 404)
+  if (current.status === 'SUSPENDED') throw new AppError('Reactiva la invitación antes de renovar el enlace', 409)
+  if (current.status !== 'APPROVED') throw new AppError('Aprueba la cuenta antes de generar el enlace', 409)
+  if (current.email) {
+    const user = await prisma.user.findFirst({ where: { email: { equals: current.email, mode: 'insensitive' }, role: { in: ['ADMIN', 'TECH_ADMIN'] } }, select: { role: true } })
+    if (user?.role === 'TECH_ADMIN') throw new AppError('Esta cuenta ya se registró; no necesita otro enlace', 409)
+    if (user?.role === 'ADMIN') throw new AppError('No puedes invitar al administrador principal como adminTec', 409)
+  }
+  const token = createInviteToken()
+  const invite = await prisma.techAdminInvite.update({ where: { id }, data: { tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+  return publicInvite(invite, token)
+}
+
+export async function setTechAdminInviteStatus(id, status) {
+  const invite = await prisma.techAdminInvite.findUnique({ where: { id } })
+  if (!invite) throw new AppError('Cuenta técnica no encontrada', 404)
+  const updated = await prisma.$transaction(async tx => {
+    const result = await tx.techAdminInvite.update({ where: { id }, data: { status } })
+    const user = invite.email ? await tx.user.findFirst({ where: { email: { equals: invite.email, mode: 'insensitive' } }, select: { id: true, auth0Id: true, role: true } }) : null
+    if (user) {
+      if (status === 'APPROVED' && user.role === 'ADMIN') throw new AppError('El correo pertenece al administrador principal', 409)
+      if (status === 'APPROVED') await tx.user.update({ where: { id: user.id }, data: { role: 'TECH_ADMIN', isActive: true } })
+      else await tx.user.updateMany({ where: { id: user.id, role: 'TECH_ADMIN' }, data: { isActive: false } })
+    }
+    return { invite: result, auth0Id: user?.auth0Id }
+  })
+  return { id: updated.invite.id, email: updated.invite.email, status: updated.invite.status, auth0Id: updated.auth0Id }
+}
+
 export async function updateCommissionPercent(value) {
   const commissionPercent = Number(value)
   if (!Number.isInteger(commissionPercent) || commissionPercent < 20 || commissionPercent > 40) {

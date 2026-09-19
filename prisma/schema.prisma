@@ -161,6 +161,20 @@ model MarketingAdminInvite {
   @@map("marketing_admin_invites")
 }
 
+model TechAdminInvite {
+  id            String   @id @default(uuid())
+  email         String?  @unique
+  tokenHash     String?  @unique
+  tokenExpiresAt DateTime?
+  status        MarketingAdminInviteStatus @default(PENDING)
+  createdByEmail String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@map("tech_admin_invites")
+}
+
 model Restaurant {
   id                   String           @id @default(uuid())
   name                 String
