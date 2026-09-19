@@ -369,14 +369,22 @@ export async function setMarketingAdminInviteStatus(id, status) {
 }
 
 export async function listTechAdmins(period = 'month', selectedDate) {
-  const users = await prisma.user.findMany({ where: { role: 'TECH_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
+  const allowedPeriods = ['day', 'week', 'month', 'year']
+  if (!allowedPeriods.includes(period)) period = 'month'
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => Number(part.value))
+  const dateParts = typeof selectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate) ? selectedDate.split('-').map(Number) : today
+  const [year, month, day] = dateParts
+  const reference = new Date(Date.UTC(year, month - 1, day, 5)); const start = new Date(reference); let end
+  if (period === 'day') { end = new Date(start); end.setUTCDate(end.getUTCDate() + 1) } else if (period === 'week') { start.setUTCDate(start.getUTCDate() - 6); end = new Date(reference); end.setUTCDate(end.getUTCDate() + 1) } else if (period === 'year') { start.setUTCMonth(0, 1); end = new Date(Date.UTC(year + 1, 0, 1, 5)) } else { start.setUTCDate(1); end = new Date(Date.UTC(year, month, 1, 5)) }
+  const periodFilter = { OR: [{ startedAt: { gte: start, lt: end } }, { endedAt: { gte: start, lt: end } }] }
+  const users = await prisma.user.findMany({ where: { role: 'TECH_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: periodFilter, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
   const invites = await prisma.techAdminInvite.findMany({ orderBy: { createdAt: 'asc' } })
   const emails = invites.filter(item => item.email).map(item => ({ email: { equals: item.email, mode: 'insensitive' } }))
   const registered = emails.length ? await prisma.user.findMany({ where: { OR: emails }, select: { email: true, name: true } }) : []
   const names = new Map(registered.map(item => [item.email.toLowerCase(), item.name]))
   const active = new Map(users.map(item => [item.email.toLowerCase(), item]))
-  const end = new Date()
-  return { period, date: selectedDate || end.toISOString().slice(0, 10), total: users.length, slotsUsed: invites.length, limit: 2, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > end), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isTechAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
+  const expiryNow = new Date()
+  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, limit: 2, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > expiryNow), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isTechAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
 }
 
 export async function createTechAdminInvite(createdByEmail) {
