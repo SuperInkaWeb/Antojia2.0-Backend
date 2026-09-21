@@ -9,6 +9,7 @@ const IMAGE_TYPES = new Map([
 ])
 const ALLOWED_SCOPES = new Set([
   'restaurants/logos',
+  'restaurants/banners',
   'drivers/dni',
   'drivers/licenses',
   'drivers/vehicles',
