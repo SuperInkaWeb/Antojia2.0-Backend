@@ -4,6 +4,7 @@ import { getIdentityClaims } from '../../config/auth0.js'
 import { AppError } from '../../shared/utils/appError.js'
 import { invalidateUserCache } from '../../middleware/auth.middleware.js'
 import { createHash } from 'node:crypto'
+import { encryptSensitiveData, maskAccount } from '../../shared/utils/sensitiveData.js'
 
 // POST /api/v1/auth/sync
 export async function sync(req, res) {
@@ -57,15 +58,17 @@ export async function registerRestaurant(req, res) {
   const {
     name, ruc, category, description,
     address, addressReference, district, phone, latitude, longitude, logoUrl,
+    accountNumber,
   } = req.body
  
   // Validaciones
   const lat = Number(latitude)
   const lng = Number(longitude)
-  if (!name || !ruc || !category || !address || !district || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
+  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({
       success: false,
-      message: 'Nombre, RUC, categoría, dirección, distrito y ubicación en el mapa son requeridos',
+      message: 'Nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación en el mapa son requeridos. La cuenta debe tener entre 8 y 20 dígitos',
     })
   }
   if (!/^\d{11}$/.test(ruc)) {
@@ -102,6 +105,8 @@ export async function registerRestaurant(req, res) {
         logoUrl: logoUrl || null,
         address, addressReference: addressReference || null, district, phone,
         latitude: lat, longitude: lng,
+        bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber: cleanAccountNumber }),
+        bankAccountNumberMasked: maskAccount(cleanAccountNumber),
         status: 'PENDING_VERIFICATION',
         isDeliveryEnabled:    true,
         isReservationEnabled: true,
@@ -117,7 +122,7 @@ export async function registerRestaurant(req, res) {
   res.status(201).json({
     success: true,
     message: 'Restaurante registrado. Pendiente de verificación por el administrador.',
-    data: restaurant,
+      data: { ...restaurant, bankAccountNumberEncrypted: undefined },
   })
 }
 

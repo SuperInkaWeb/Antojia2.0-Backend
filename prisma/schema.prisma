@@ -200,6 +200,10 @@ model Restaurant {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
+  // Datos de abono del restaurante. El número completo se guarda cifrado.
+  bankAccountNumberEncrypted String?
+  bankAccountNumberMasked    String?
+
   // Campos heredados de la antigua integración OAuth por restaurante.
   // Ya no se usan; se conservan temporalmente para evitar borrar datos
   // existentes hasta ejecutar una migración controlada más adelante.
@@ -427,6 +431,10 @@ model DeliveryDriver {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Datos de abono del repartidor. El número completo se guarda cifrado.
+  bankAccountNumberEncrypted String?
+  bankAccountNumberMasked    String?
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

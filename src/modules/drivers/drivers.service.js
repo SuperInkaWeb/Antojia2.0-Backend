@@ -1,9 +1,11 @@
 import { prisma } from '../../config/database.js'
 import { AppError } from '../../shared/utils/appError.js'
+import { encryptSensitiveData, maskAccount } from '../../shared/utils/sensitiveData.js'
 
 // ── Registrarse como repartidor ───────────────────────────────
 export async function register(userId, body) {
   const { vehicleType, licensePlate, dni, licenseNumber, licensePhotoUrl, dniPhotoUrl, vehiclePhotoUrl } = body
+  const accountNumber = String(body.accountNumber || '').replace(/\s/g, '')
 
   // Verificar que no tenga ya un perfil
   const existing = await prisma.deliveryDriver.findUnique({ where: { userId } })
@@ -15,6 +17,7 @@ export async function register(userId, body) {
   if (requiresLicense && !licenseNumber)   throw new AppError('El número de carné de conducir es requerido', 400)
   if (requiresLicense && !licensePhotoUrl) throw new AppError('La foto del carné de conducir es requerida', 400)
   if (!dni) throw new AppError('El DNI es requerido', 400)
+  if (!/^\d{8,20}$/.test(accountNumber)) throw new AppError('El número de cuenta es requerido y debe tener entre 8 y 20 dígitos', 400)
 
   // Cambiar rol del usuario
   await prisma.user.update({
@@ -32,6 +35,8 @@ export async function register(userId, body) {
       licensePhotoUrl: licensePhotoUrl || null,
       dniPhotoUrl:     dniPhotoUrl     || null,
       vehiclePhotoUrl: vehiclePhotoUrl || null,
+      bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber }),
+      bankAccountNumberMasked: maskAccount(accountNumber),
       status:          'OFFLINE',
       isVerified:      false,
     },
@@ -107,7 +112,7 @@ export async function updateStatus(userId, status) {
 }
 
 // ── Actualizar vehículo ──────────────────────────────────────
-export async function updateVehicle(userId, { vehicleType, licensePlate }) {
+export async function updateVehicle(userId, { vehicleType, licensePlate, accountNumber }) {
   const driver = await prisma.deliveryDriver.findUnique({ where: { userId } })
   if (!driver) throw new AppError('Perfil de repartidor no encontrado', 404)
  
@@ -115,12 +120,22 @@ export async function updateVehicle(userId, { vehicleType, licensePlate }) {
   if (vehicleType && !valid.includes(vehicleType)) {
     throw new AppError('Tipo de vehículo inválido', 400)
   }
+  let bankData = {}
+  if (accountNumber !== undefined) {
+    const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
+    if (!/^\d{8,20}$/.test(cleanAccountNumber)) throw new AppError('El número de cuenta debe tener entre 8 y 20 dígitos', 400)
+    bankData = {
+      bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber: cleanAccountNumber }),
+      bankAccountNumberMasked: maskAccount(cleanAccountNumber),
+    }
+  }
  
   return prisma.deliveryDriver.update({
     where: { userId },
     data: {
       ...(vehicleType  !== undefined && { vehicleType }),
       ...(licensePlate !== undefined && { licensePlate: licensePlate || null }),
+      ...bankData,
     },
   })
 }

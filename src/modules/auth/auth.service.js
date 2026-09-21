@@ -73,6 +73,7 @@ export async function getProfile(userId) {
           description: true, address: true, addressReference: true, district: true,
           latitude: true, longitude: true, phone: true,
           deliveryFee: true, estimatedTime: true,
+          bankAccountNumberMasked: true,
         },
       },
       driverProfile: {
@@ -80,6 +81,7 @@ export async function getProfile(userId) {
           id: true, status: true, isVerified: true,
           vehicleType: true, licensePlate: true,
           dni: true, licenseNumber: true, rating: true,
+          bankAccountNumberMasked: true,
         },
       },
     },

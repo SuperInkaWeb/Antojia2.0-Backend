@@ -40,15 +40,17 @@ export async function create(req, res) {
     isDeliveryEnabled, isReservationEnabled,
     deliveryFee, minOrderAmount, estimatedTime,
     openingHours,
+    accountNumber,
   } = req.body
 
   // Validaciones básicas
   const lat = Number(latitude)
   const lng = Number(longitude)
-  if (!name || !ruc || !category || !address || !district || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
+  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({
       success: false,
-      message: 'Nombre, RUC, categoría, dirección, distrito y ubicación en el mapa son requeridos',
+      message: 'Nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación en el mapa son requeridos. La cuenta debe tener entre 8 y 20 dígitos',
     })
   }
 
@@ -69,6 +71,7 @@ export async function create(req, res) {
     minOrderAmount:       minOrderAmount       ?? null,
     estimatedTime:        estimatedTime        ?? null,
     openingHours:         openingHours         ?? null,
+    accountNumber: cleanAccountNumber,
   })
 
   res.status(201).json({

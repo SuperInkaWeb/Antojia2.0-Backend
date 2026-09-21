@@ -314,15 +314,19 @@ export async function create(ownerId, body) {
     throw new AppError('Este RUC ya está registrado', 409, 'RUC_TAKEN')
   }
 
+  const { accountNumber, ...restaurantBody } = body
   const restaurant = await prisma.restaurant.create({
     data: {
-      ...body,
+      ...restaurantBody,
+      bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber }),
+      bankAccountNumberMasked: maskAccount(accountNumber),
       ownerId,
       status: 'PENDING_VERIFICATION',
     },
   })
 
-  return restaurant
+  const { bankAccountNumberEncrypted: _encrypted, ...safeRestaurant } = restaurant
+  return safeRestaurant
 }
 
 // ── Actualizar restaurante ────────────────────────────────────
@@ -340,7 +344,15 @@ export async function update(id, ownerId, role, body) {
   }
 
   // No permitir cambiar el RUC
-  const { ruc, ...safeBody } = body
+  const { ruc, accountNumber, ...safeBody } = body
+  if (accountNumber !== undefined) {
+    const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
+    if (!/^\d{8,20}$/.test(cleanAccountNumber)) {
+      throw new AppError('El número de cuenta debe tener entre 8 y 20 dígitos', 400)
+    }
+    safeBody.bankAccountNumberEncrypted = encryptSensitiveData({ accountNumber: cleanAccountNumber })
+    safeBody.bankAccountNumberMasked = maskAccount(cleanAccountNumber)
+  }
   if (safeBody.latitude !== undefined || safeBody.longitude !== undefined) {
     const lat = Number(safeBody.latitude)
     const lng = Number(safeBody.longitude)
