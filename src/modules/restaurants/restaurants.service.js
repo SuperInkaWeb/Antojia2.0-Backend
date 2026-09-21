@@ -345,6 +345,9 @@ export async function update(id, ownerId, role, body) {
 
   // No permitir cambiar el RUC
   const { ruc, accountNumber, ...safeBody } = body
+  if (safeBody.isDeliveryEnabled === false && safeBody.isReservationEnabled === false) {
+    throw new AppError('El restaurante debe mantener activo delivery o reservas', 400)
+  }
   if (accountNumber !== undefined) {
     const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
     if (!/^\d{8,20}$/.test(cleanAccountNumber)) {

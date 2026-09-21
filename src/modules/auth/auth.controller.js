@@ -59,16 +59,18 @@ export async function registerRestaurant(req, res) {
     name, ruc, category, description,
     address, addressReference, district, phone, latitude, longitude, logoUrl,
     accountNumber,
+    isDeliveryEnabled = true,
+    isReservationEnabled = true,
   } = req.body
  
   // Validaciones
   const lat = Number(latitude)
   const lng = Number(longitude)
   const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
-  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || (!isDeliveryEnabled && !isReservationEnabled) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({
       success: false,
-      message: 'Nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación en el mapa son requeridos. La cuenta debe tener entre 8 y 20 dígitos',
+      message: 'Selecciona al menos un servicio (delivery o reservas). También completa nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación',
     })
   }
   if (!/^\d{11}$/.test(ruc)) {
@@ -108,8 +110,8 @@ export async function registerRestaurant(req, res) {
         bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber: cleanAccountNumber }),
         bankAccountNumberMasked: maskAccount(cleanAccountNumber),
         status: 'PENDING_VERIFICATION',
-        isDeliveryEnabled:    true,
-        isReservationEnabled: true,
+        isDeliveryEnabled:    Boolean(isDeliveryEnabled),
+        isReservationEnabled: Boolean(isReservationEnabled),
         deliveryFee:          0,
       },
     }),

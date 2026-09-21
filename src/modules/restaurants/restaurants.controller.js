@@ -47,10 +47,10 @@ export async function create(req, res) {
   const lat = Number(latitude)
   const lng = Number(longitude)
   const cleanAccountNumber = String(accountNumber || '').replace(/\s/g, '')
-  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  if (!name || !ruc || !category || !address || !district || !cleanAccountNumber || !/^\d{8,20}$/.test(cleanAccountNumber) || (isDeliveryEnabled === false && isReservationEnabled === false) || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return res.status(400).json({
       success: false,
-      message: 'Nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación en el mapa son requeridos. La cuenta debe tener entre 8 y 20 dígitos',
+      message: 'Selecciona al menos un servicio (delivery o reservas). También completa nombre, RUC, categoría, dirección, distrito, número de cuenta y ubicación',
     })
   }
 
