@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: foodinka-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Render genera este secreto una sola vez y lo conserva entre despliegues.
+      - key: WITHDRAWAL_DATA_ENCRYPTION_KEY
+        generateValue: true

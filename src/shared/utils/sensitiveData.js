@@ -3,10 +3,18 @@ import { AppError } from './appError.js'
 
 function encryptionKey() {
   const value = process.env.WITHDRAWAL_DATA_ENCRYPTION_KEY?.trim()
-  if (!value || !/^[\da-f]{64}$/i.test(value)) {
-    throw new AppError('Falta configurar WITHDRAWAL_DATA_ENCRYPTION_KEY (64 caracteres hexadecimales)', 503)
+  if (!value) {
+    throw new AppError('Falta configurar WITHDRAWAL_DATA_ENCRYPTION_KEY en el entorno del backend', 503)
   }
-  return Buffer.from(value, 'hex')
+
+  // Acepta la clave hexadecimal de 64 caracteres usada localmente y también
+  // la clave Base64 de 32 bytes que Render puede generar automáticamente.
+  if (/^[\da-f]{64}$/i.test(value)) return Buffer.from(value, 'hex')
+
+  const decoded = Buffer.from(value, 'base64')
+  if (decoded.length === 32 && decoded.toString('base64') === value) return decoded
+
+  throw new AppError('WITHDRAWAL_DATA_ENCRYPTION_KEY debe representar exactamente 32 bytes', 503)
 }
 
 export function encryptSensitiveData(value) {
