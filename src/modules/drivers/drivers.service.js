@@ -112,7 +112,7 @@ export async function updateStatus(userId, status) {
 }
 
 // ── Actualizar vehículo ──────────────────────────────────────
-export async function updateVehicle(userId, { vehicleType, licensePlate, accountNumber }) {
+export async function updateVehicle(userId, { vehicleType, licensePlate, accountNumber, dniPhotoUrl, licensePhotoUrl, vehiclePhotoUrl }) {
   const driver = await prisma.deliveryDriver.findUnique({ where: { userId } })
   if (!driver) throw new AppError('Perfil de repartidor no encontrado', 404)
  
@@ -135,6 +135,9 @@ export async function updateVehicle(userId, { vehicleType, licensePlate, account
     data: {
       ...(vehicleType  !== undefined && { vehicleType }),
       ...(licensePlate !== undefined && { licensePlate: licensePlate || null }),
+      ...(dniPhotoUrl !== undefined && { dniPhotoUrl: dniPhotoUrl || null }),
+      ...(licensePhotoUrl !== undefined && { licensePhotoUrl: licensePhotoUrl || null }),
+      ...(vehiclePhotoUrl !== undefined && { vehiclePhotoUrl: vehiclePhotoUrl || null }),
       ...bankData,
     },
   })

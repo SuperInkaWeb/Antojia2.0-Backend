@@ -80,7 +80,9 @@ export async function getProfile(userId) {
         select: {
           id: true, status: true, isVerified: true,
           vehicleType: true, licensePlate: true,
-          dni: true, licenseNumber: true, rating: true,
+          dni: true, licenseNumber: true, dniPhotoUrl: true,
+          licensePhotoUrl: true, vehiclePhotoUrl: true,
+          rating: true, ratingCount: true,
           bankAccountNumberMasked: true,
         },
       },
