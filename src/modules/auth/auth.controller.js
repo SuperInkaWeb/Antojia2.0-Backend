@@ -57,7 +57,7 @@ export async function registerRestaurant(req, res) {
   const userId = req.user.id
   const {
     name, ruc, category, description,
-    address, addressReference, district, phone, latitude, longitude, logoUrl,
+    address, addressReference, district, phone, latitude, longitude, logoUrl, bannerUrl,
     accountNumber,
     isDeliveryEnabled = true,
     isReservationEnabled = true,
@@ -105,6 +105,7 @@ export async function registerRestaurant(req, res) {
         ownerId: userId,
         name, ruc, category, description,
         logoUrl: logoUrl || null,
+        bannerUrl: bannerUrl || null,
         address, addressReference: addressReference || null, district, phone,
         latitude: lat, longitude: lng,
         bankAccountNumberEncrypted: encryptSensitiveData({ accountNumber: cleanAccountNumber }),

@@ -36,7 +36,7 @@ export async function requestWithdrawal(req, res) {
 export async function create(req, res) {
   const {
     name, ruc, description, category,
-    address, addressReference, district, phone, latitude, longitude,
+    address, addressReference, district, phone, latitude, longitude, logoUrl, bannerUrl,
     isDeliveryEnabled, isReservationEnabled,
     deliveryFee, minOrderAmount, estimatedTime,
     openingHours,
@@ -65,6 +65,8 @@ export async function create(req, res) {
     name, ruc, description, category,
     address, addressReference: addressReference || null, district, phone,
     latitude: lat, longitude: lng,
+    logoUrl: logoUrl || null,
+    bannerUrl: bannerUrl || null,
     isDeliveryEnabled:    isDeliveryEnabled    ?? true,
     isReservationEnabled: isReservationEnabled ?? true,
     deliveryFee:          deliveryFee          ?? 0,
