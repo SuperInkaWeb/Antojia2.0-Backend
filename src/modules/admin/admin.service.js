@@ -174,7 +174,7 @@ export async function getRestaurantSettlements() {
         id: true, name: true, status: true, district: true, logoUrl: true,
         owner: { select: { name: true, email: true } },
         payouts: { select: { grossAmount: true, commissionAmount: true, netAmount: true, commissionPercent: true, createdAt: true } },
-        withdrawals: { select: { id: true, amount: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, bankDetailsEncrypted: true, transferReference: true, createdAt: true, paidAt: true }, orderBy: { createdAt: 'desc' } },
+        withdrawals: { select: { id: true, amount: true, isTest: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, bankDetailsEncrypted: true, transferReference: true, createdAt: true, paidAt: true }, orderBy: { createdAt: 'desc' } },
         orders: { where: { status: { not: 'CANCELLED' } }, select: { status: true, payment: { where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO' }, select: { amount: true, status: true, metadata: true, order: { select: { status: true, subtotal: true, discountAmount: true } } } } } },
       },
     }),
@@ -192,7 +192,8 @@ export async function getRestaurantSettlements() {
       const pendingSales = Math.max(0, salesTotal - creditedGross)
       const totalCredits = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
       const paidCommission = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.commissionAmount), 0)
-      const reservedWithdrawals = restaurant.withdrawals.filter(item => ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+      const reservedWithdrawals = restaurant.withdrawals.filter(item => !item.isTest && ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+      const testWithdrawals = restaurant.withdrawals.filter(item => item.isTest && ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
       return {
         id: restaurant.id, name: restaurant.name, status: restaurant.status, district: restaurant.district,
         logoUrl: restaurant.logoUrl, owner: restaurant.owner,
@@ -201,6 +202,7 @@ export async function getRestaurantSettlements() {
         testSalesTotal: Number(testSalesTotal.toFixed(2)), testPaidOrderCount: testPayments.length,
         testAdminCommission: Number((testSalesTotal * settings.commissionPercent / 100).toFixed(2)),
         testRestaurantNet: Number((testSalesTotal * (100 - settings.commissionPercent) / 100).toFixed(2)),
+        testBalance: Number(Math.max(0, testSalesTotal * (100 - settings.commissionPercent) / 100 - testWithdrawals).toFixed(2)),
         commissionPercent: settings.commissionPercent,
         adminEarnedTotal: Number((paidCommission + pendingSales * settings.commissionPercent / 100).toFixed(2)),
         restaurantEarnedTotal: Number((totalCredits + pendingSales * (100 - settings.commissionPercent) / 100).toFixed(2)),
@@ -213,7 +215,7 @@ export async function getRestaurantSettlements() {
       }
     }),
     withdrawalRequests: withdrawals.map(item => ({
-      id: item.id, restaurant: item.restaurant, amount: item.amount, status: item.status,
+      id: item.id, restaurant: item.restaurant, amount: item.amount, isTest: item.isTest, status: item.status,
       bankName: item.bankName, accountHolder: item.accountHolder,
       destinationAccountMasked: item.destinationAccountMasked,
       bankDetails: decryptSensitiveData(item.bankDetailsEncrypted),
@@ -318,7 +320,7 @@ export async function listMarketingAdmins(period = 'month', selectedDate) {
   const registeredByEmail = new Map(registeredUsers.map(user => [user.email.toLowerCase(), user]))
   const marketingAdminsByEmail = new Map(users.map(user => [user.email.toLowerCase(), user]))
   const invitations = invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > end), accountCreated: Boolean(invite.email && registeredByEmail.has(invite.email.toLowerCase())), isMarketingAdmin: Boolean(invite.email && marketingAdminsByEmail.has(invite.email.toLowerCase())), name: invite.email ? registeredByEmail.get(invite.email.toLowerCase())?.name || null : null }))
-  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, limit: 2, invites: invitations, admins: users }
+  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, invites: invitations, admins: users }
 }
 
 const createInviteToken = () => randomBytes(32).toString('base64url')
@@ -330,8 +332,6 @@ export async function createMarketingAdminInvite(createdByEmail) {
   const token = createInviteToken()
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(78124020)) AS invite_lock`
-    const count = await tx.marketingAdminInvite.count()
-    if (count >= 2) throw new AppError('Ya se crearon las 2 cuentas permitidas de marketing', 409)
     const invite = await tx.marketingAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
     return publicInvite(invite, token)
   })
@@ -384,14 +384,13 @@ export async function listTechAdmins(period = 'month', selectedDate) {
   const names = new Map(registered.map(item => [item.email.toLowerCase(), item.name]))
   const active = new Map(users.map(item => [item.email.toLowerCase(), item]))
   const expiryNow = new Date()
-  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, limit: 2, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > expiryNow), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isTechAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
+  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > expiryNow), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isTechAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
 }
 
 export async function createTechAdminInvite(createdByEmail) {
   const token = createInviteToken()
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(78124021)) AS invite_lock`
-    if (await tx.techAdminInvite.count() >= 2) throw new AppError('Ya se crearon las 2 cuentas permitidas de adminTec', 409)
     const invite = await tx.techAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
     return publicInvite(invite, token)
   })
@@ -457,11 +456,11 @@ export async function creditRestaurant(id) {
 
 export async function markWithdrawalPaid(id, transferReference) {
   const reference = String(transferReference || '').trim()
-  if (!reference) throw new AppError('Ingresa el número de operación de la transferencia', 400)
   const withdrawal = await prisma.restaurantWithdrawal.findUnique({ where: { id } })
   if (!withdrawal) throw new AppError('Solicitud de retiro no encontrada', 404)
   if (withdrawal.status !== 'PENDING') throw new AppError('Esta solicitud ya fue procesada', 409)
-  return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference, paidAt: new Date() } })
+  if (!withdrawal.isTest && !reference) throw new AppError('Ingresa el número de operación de la transferencia', 400)
+  return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference || 'SOLICITUD_DE_PRUEBA', paidAt: new Date() } })
 }
 
 // ── Usuarios ──────────────────────────────────────────────────

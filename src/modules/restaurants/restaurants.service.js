@@ -145,7 +145,8 @@ export async function getWallet(restaurantId, userId) {
   const credited = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.netAmount), 0)
   const pastCommission = restaurant.payouts.reduce((sum, payout) => sum + Number(payout.commissionAmount), 0)
   const restaurantEarnedTotal = credited + pendingSales * (100 - commissionPercent) / 100
-  const reserved = restaurant.withdrawals.filter(item => ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+  const reserved = restaurant.withdrawals.filter(item => !item.isTest && ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
+  const testReserved = restaurant.withdrawals.filter(item => item.isTest && ['PENDING', 'PROCESSING', 'PAID'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)
   return {
     balance: Number(Math.max(0, credited - reserved).toFixed(2)),
     commissionPercent,
@@ -161,6 +162,7 @@ export async function getWallet(restaurantId, userId) {
     testOrderCount: testPayments.length,
     testAdminCommission: Number((testSalesTotal * commissionPercent / 100).toFixed(2)),
     testRestaurantNet: Number((testSalesTotal * (100 - commissionPercent) / 100).toFixed(2)),
+    testBalance: Number(Math.max(0, testSalesTotal * (100 - commissionPercent) / 100 - testReserved).toFixed(2)),
     payouts: restaurant.payouts,
     withdrawals: restaurant.withdrawals.map(({ bankDetailsEncrypted, ...item }) => item),
   }
@@ -173,6 +175,7 @@ export async function requestWithdrawal(restaurantId, userId, body) {
   const accountNumber = String(body.accountNumber || '').replace(/\s/g, '')
   const cci = String(body.cci || '').replace(/\s/g, '')
   const accountType = String(body.accountType || 'CUENTA').trim()
+  const isTest = body.isTest === true
   if (!Number.isFinite(amount) || amount <= 0) throw new AppError('Ingresa un monto de retiro válido', 400)
   if (!bankName || !accountHolder || (!accountNumber && !cci)) throw new AppError('Completa banco, titular y número de cuenta o CCI', 400)
   if ((accountNumber && !/^\d{8,20}$/.test(accountNumber)) || (cci && !/^\d{20}$/.test(cci))) {
@@ -188,13 +191,13 @@ export async function requestWithdrawal(restaurantId, userId, body) {
     if (restaurant.ownerId !== userId) throw new AppError('Sin permisos', 403)
     const [credits, withdrawals] = await Promise.all([
       tx.restaurantPayout.aggregate({ where: { restaurantId }, _sum: { netAmount: true } }),
-      tx.restaurantWithdrawal.aggregate({ where: { restaurantId, status: { in: ['PENDING', 'PROCESSING', 'PAID'] } }, _sum: { amount: true } }),
+      tx.restaurantWithdrawal.aggregate({ where: { restaurantId, isTest: false, status: { in: ['PENDING', 'PROCESSING', 'PAID'] } }, _sum: { amount: true } }),
     ])
     const balance = Number(credits._sum.netAmount || 0) - Number(withdrawals._sum.amount || 0)
-    if (amount > balance + 0.001) throw new AppError('El monto supera tu saldo disponible', 400)
+    if (!isTest && amount > balance + 0.001) throw new AppError('El monto supera tu saldo disponible', 400)
     return tx.restaurantWithdrawal.create({
       data: {
-        restaurantId, amount: Number(amount.toFixed(2)), bankName, accountHolder,
+        restaurantId, amount: Number(amount.toFixed(2)), isTest, bankName, accountHolder,
         destinationAccountMasked: maskAccount(destination), bankDetailsEncrypted: sensitive,
       },
       select: { id: true, amount: true, status: true, bankName: true, accountHolder: true, destinationAccountMasked: true, createdAt: true },

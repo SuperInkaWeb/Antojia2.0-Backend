@@ -14,9 +14,7 @@ const ORDER_INCLUDE = {
   },
   savedAddress: true,
   driver: {
-    include: {
-      user: { select: { id: true, name: true, phone: true } },
-    },
+    select: { id: true, currentLatitude: true, currentLongitude: true, lastLocationAt: true, user: { select: { id: true, name: true, phone: true } } },
   },
   payment: {
     select: { id: true, status: true, method: true, amount: true, paidAt: true },
@@ -345,9 +343,12 @@ export async function listByRestaurant(restaurantId, userId, role, query) {
     // confirmado. Los pedidos que sí avanzaron se conservan como ventas.
     .filter(order => !(order.payment?.status === 'PENDING' && order.status === 'PENDING'))
     .map(order => {
-    if (!order.payment) return hideDeliveryCode(order)
-    const { metadata, ...payment } = order.payment
-    return hideDeliveryCode({ ...order, payment: { ...payment, isTest: metadata?.mode === 'TEST' } })
+    const safeOrder = ['READY', 'ON_THE_WAY'].includes(order.status) || !order.driver
+      ? order
+      : { ...order, driver: { ...order.driver, currentLatitude: null, currentLongitude: null, lastLocationAt: null } }
+    if (!safeOrder.payment) return hideDeliveryCode(safeOrder)
+    const { metadata, ...payment } = safeOrder.payment
+    return hideDeliveryCode({ ...safeOrder, payment: { ...payment, isTest: metadata?.mode === 'TEST' } })
     })
 
   return { data: restaurantOrders, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } }
