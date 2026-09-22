@@ -52,6 +52,12 @@ export async function cancel(req, res) {
   res.json({ success: true, message: 'Pedido cancelado', data })
 }
 
+// PATCH /api/v1/orders/:id/change-driver
+export async function changeDriver(req, res) {
+  const data = await svc.changeDriver(req.params.id, req.user.id)
+  res.json({ success: true, message: 'El pedido volvió a estar disponible para otro repartidor', data })
+}
+
 // PATCH /api/v1/orders/:id/assign-driver
 export async function assignDriver(req, res) {
   const data = await svc.assignDriver(req.params.id, req.user.id)

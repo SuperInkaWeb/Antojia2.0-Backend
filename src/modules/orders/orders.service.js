@@ -457,6 +457,56 @@ export async function cancel(id, userId) {
   })
 }
 
+// ── Solicitar cambio de repartidor ───────────────────────────
+// Libera el pedido y lo devuelve a READY dentro de una transacción. La
+// asignación posterior sigue usando updateMany con driverId:null, por lo que
+// solo un repartidor puede tomarlo aunque varios lo vean disponible.
+export async function changeDriver(orderId, userId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, userId: true, type: true, status: true, driverId: true },
+  })
+  if (!order) throw new AppError('Pedido no encontrado', 404)
+  if (order.userId !== userId) throw new AppError('No tienes permisos sobre este pedido', 403)
+  if (order.type !== 'DELIVERY') throw new AppError('Solo puedes cambiar el repartidor de un delivery', 400)
+  if (!order.driverId) throw new AppError('Este pedido aún no tiene repartidor asignado', 400)
+  if (!['READY', 'ON_THE_WAY'].includes(order.status)) {
+    throw new AppError('Ya no se puede cambiar el repartidor de este pedido', 400)
+  }
+
+  return prisma.$transaction(async tx => {
+    const released = await tx.order.updateMany({
+      where: {
+        id: orderId,
+        userId,
+        type: 'DELIVERY',
+        status: { in: ['READY', 'ON_THE_WAY'] },
+        driverId: order.driverId,
+      },
+      data: {
+        status: 'READY',
+        driverId: null,
+        driverAssignedAt: null,
+        pickedUpAt: null,
+      },
+    })
+    if (released.count !== 1) {
+      throw new AppError('El pedido cambió mientras se solicitaba el cambio de repartidor', 409)
+    }
+
+    const otherActiveOrders = await tx.order.count({
+      where: { driverId: order.driverId, type: 'DELIVERY', status: { in: ['READY', 'ON_THE_WAY'] } },
+    })
+    await tx.deliveryDriver.update({
+      where: { id: order.driverId },
+      data: { status: otherActiveOrders ? 'ON_DELIVERY' : 'AVAILABLE' },
+    })
+
+    const releasedOrder = await tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
+    return hideDeliveryCode(releasedOrder)
+  })
+}
+
 // ── Asignar repartidor ────────────────────────────────────────
 export async function assignDriver(orderId, userId) {
   const order = await prisma.order.findUnique({

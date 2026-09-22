@@ -11,6 +11,7 @@ router.get('/my',         ctrl.myOrders)      // mis pedidos + historial
 router.get('/reverse-geocode', ctrl.reverseGeocode)
 router.get('/:id',        ctrl.getOne)        // detalle de un pedido
 router.patch('/:id/cancel', ctrl.cancel)      // cancelar pedido
+router.patch('/:id/change-driver', ctrl.changeDriver) // solicitar otro repartidor
 router.post('/:id/driver-rating', ctrl.rateDriver) // calificar repartidor
 
 // ── Restaurante ────────────────────────────────────────────────
