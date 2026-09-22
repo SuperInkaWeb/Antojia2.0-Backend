@@ -535,16 +535,18 @@ export async function getFinanceDashboard() {
   })
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
   const [requests, payouts, paidWithdrawals] = await Promise.all([
-    prisma.restaurantWithdrawal.findMany({ where: { status: { in: ['PENDING', 'PROCESSING'] } }, include: { restaurant: { select: { id: true, name: true, district: true, owner: { select: { name: true, email: true } } } } }, orderBy: { createdAt: 'asc' } }),
+    prisma.restaurantWithdrawal.findMany({ include: { restaurant: { select: { id: true, name: true, district: true, owner: { select: { name: true, email: true } } } } }, orderBy: { createdAt: 'desc' } }),
     prisma.restaurantPayout.findMany({ where: { createdAt: { gte: start } }, select: { commissionAmount: true, netAmount: true, createdAt: true } }),
     prisma.restaurantWithdrawal.findMany({ where: { status: 'PAID', paidAt: { gte: start } }, select: { amount: true, isTest: true, paidAt: true } }),
   ])
-  const timeline = Object.fromEntries(months.map(month => [month, { month, incoming: 0, outgoing: 0, testOutgoing: 0 }]))
-  for (const payout of payouts) timeline[financeMonthKey(payout.createdAt)].incoming += Number(payout.commissionAmount || 0)
+  const timeline = Object.fromEntries(months.map(month => [month, { month, adminIncome: 0, restaurantIncome: 0, testOutgoing: 0 }]))
+  for (const payout of payouts) {
+    timeline[financeMonthKey(payout.createdAt)].adminIncome += Number(payout.commissionAmount || 0)
+    timeline[financeMonthKey(payout.createdAt)].restaurantIncome += Number(payout.netAmount || 0)
+  }
   for (const withdrawal of paidWithdrawals) {
     const key = financeMonthKey(withdrawal.paidAt)
     if (withdrawal.isTest) timeline[key].testOutgoing += Number(withdrawal.amount || 0)
-    else timeline[key].outgoing += Number(withdrawal.amount || 0)
   }
   const requestsData = requests.map(item => ({
     id: item.id, amount: item.amount, status: item.status, isTest: item.isTest, bankName: item.bankName,
@@ -556,11 +558,14 @@ export async function getFinanceDashboard() {
     summary: {
       pendingRequests: requests.filter(item => item.status === 'PENDING').length,
       processingRequests: requests.filter(item => item.status === 'PROCESSING').length,
-      pendingAmount: Number(requests.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+      pendingAmount: Number(requests.filter(item => ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+      pendingRealAmount: Number(requests.filter(item => !item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+      pendingTestAmount: Number(requests.filter(item => item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
       incomingCommission: Number(payouts.reduce((sum, item) => sum + Number(item.commissionAmount || 0), 0).toFixed(2)),
+      restaurantIncome: Number(payouts.reduce((sum, item) => sum + Number(item.netAmount || 0), 0).toFixed(2)),
       outgoingAmount: Number(paidWithdrawals.filter(item => !item.isTest).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
     },
-    timeline: Object.values(timeline).map(item => ({ ...item, incoming: Number(item.incoming.toFixed(2)), outgoing: Number(item.outgoing.toFixed(2)), testOutgoing: Number(item.testOutgoing.toFixed(2)) })),
+    timeline: Object.values(timeline).map(item => ({ ...item, adminIncome: Number(item.adminIncome.toFixed(2)), restaurantIncome: Number(item.restaurantIncome.toFixed(2)), testOutgoing: Number(item.testOutgoing.toFixed(2)) })),
     requests: requestsData,
   }
 }
