@@ -14,6 +14,41 @@ function paginationMeta(page, limit, total) {
   return { page, limit, total, totalPages: Math.ceil(total / limit) }
 }
 
+// ── Promociones y recompensas ────────────────────────────────
+export async function listMarketingRewards() {
+  return prisma.marketingReward.findMany({ orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }], include: { createdBy: { select: { name: true } } } })
+}
+
+export async function createMarketingReward(input, createdById) {
+  const type = input.type === 'PURCHASE_REWARD' ? 'PURCHASE_REWARD' : 'PROMOTION'
+  const title = String(input.title || '').trim()
+  if (!title) throw new AppError('El título es requerido', 400)
+  const discountPct = input.discountPct === '' || input.discountPct == null ? null : Number(input.discountPct)
+  const discountAmount = input.discountAmount === '' || input.discountAmount == null ? null : Number(input.discountAmount)
+  const rewardPoints = input.rewardPoints === '' || input.rewardPoints == null ? null : Number(input.rewardPoints)
+  if (discountPct != null && (!Number.isInteger(discountPct) || discountPct < 0 || discountPct > 100)) throw new AppError('El descuento debe estar entre 0 y 100%', 400)
+  if (discountAmount != null && (!Number.isFinite(discountAmount) || discountAmount < 0)) throw new AppError('El descuento fijo no es válido', 400)
+  if (type === 'PURCHASE_REWARD' && (!Number.isInteger(rewardPoints) || rewardPoints < 1)) throw new AppError('Indica los puntos de la recompensa', 400)
+  const startsAt = input.startsAt ? new Date(input.startsAt) : null
+  const endsAt = input.endsAt ? new Date(input.endsAt) : null
+  if (startsAt && Number.isNaN(startsAt.getTime())) throw new AppError('La fecha de inicio no es válida', 400)
+  if (endsAt && Number.isNaN(endsAt.getTime())) throw new AppError('La fecha de fin no es válida', 400)
+  if (startsAt && endsAt && endsAt < startsAt) throw new AppError('La fecha de fin debe ser posterior al inicio', 400)
+  return prisma.marketingReward.create({ data: { title, description: input.description?.trim() || null, type, code: input.code?.trim().toUpperCase() || null, discountPct: type === 'PROMOTION' ? discountPct : null, discountAmount: type === 'PROMOTION' ? discountAmount : null, rewardPoints: type === 'PURCHASE_REWARD' ? rewardPoints : null, minPurchase: Number(input.minPurchase || 0), usageLimit: input.usageLimit ? Number(input.usageLimit) : null, startsAt, endsAt, createdById } })
+}
+
+export async function toggleMarketingReward(id) {
+  const reward = await prisma.marketingReward.findUnique({ where: { id } })
+  if (!reward) throw new AppError('Recompensa no encontrada', 404)
+  return prisma.marketingReward.update({ where: { id }, data: { isActive: !reward.isActive } })
+}
+
+export async function deleteMarketingReward(id) {
+  const reward = await prisma.marketingReward.findUnique({ where: { id }, select: { id: true } })
+  if (!reward) throw new AppError('Recompensa no encontrada', 404)
+  return prisma.marketingReward.delete({ where: { id } })
+}
+
 // ── Métricas ──────────────────────────────────────────────────
 export async function getMetrics() {
   const now = new Date()
@@ -522,32 +557,76 @@ export async function markWithdrawalPaid(id, transferReference) {
   return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference || 'SOLICITUD_DE_PRUEBA', paidAt: new Date() } })
 }
 
-function financeMonthKey(value) {
-  const date = new Date(value)
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+function financePeriodConfig(period = 'month', now = new Date()) {
+  const allowed = ['day', 'week', 'month', 'year']
+  const selected = allowed.includes(period) ? period : 'month'
+  const lima = new Date(now.getTime() - 5 * 60 * 60 * 1000)
+  const year = lima.getUTCFullYear(); const month = lima.getUTCMonth(); const day = lima.getUTCDate()
+  const start = selected === 'day'
+    ? new Date(Date.UTC(year, month, day, 5))
+    : selected === 'week'
+      ? new Date(Date.UTC(year, month, day - 6, 5))
+      : selected === 'month'
+        ? new Date(Date.UTC(year, month, 1, 5))
+        : new Date(Date.UTC(year, 0, 1, 5))
+  const end = selected === 'year'
+    ? new Date(Date.UTC(year + 1, 0, 1, 5))
+    : selected === 'month'
+      ? new Date(Date.UTC(year, month + 1, 1, 5))
+      : selected === 'week'
+        ? new Date(Date.UTC(year, month, day + 1, 5))
+        : new Date(Date.UTC(year, month, day + 1, 5))
+  const buckets = []
+  if (selected === 'day') {
+    for (let hour = 0; hour < 24; hour++) buckets.push({ key: String(hour).padStart(2, '0'), label: `${String(hour).padStart(2, '0')}:00` })
+  } else if (selected === 'year') {
+    for (let index = 0; index < 12; index++) buckets.push({ key: `${year}-${String(index + 1).padStart(2, '0')}`, label: new Date(Date.UTC(year, index, 1)).toLocaleDateString('es-PE', { month: 'short', timeZone: 'UTC' }) })
+  } else {
+    const count = selected === 'week' ? 7 : new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+    for (let index = 0; index < count; index++) {
+      const date = new Date(Date.UTC(year, month, selected === 'week' ? day - 6 + index : index + 1))
+      buckets.push({ key: date.toISOString().slice(0, 10), label: `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}` })
+    }
+  }
+  return { period: selected, start, end, buckets }
 }
 
-export async function getFinanceDashboard() {
-  const now = new Date()
-  const months = Array.from({ length: 12 }, (_, index) => {
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11 + index, 1))
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
-  })
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
-  const [requests, payouts, paidWithdrawals] = await Promise.all([
+function financeBucketKey(value, period) {
+  const date = new Date(value)
+  const lima = new Date(date.getTime() - 5 * 60 * 60 * 1000)
+  if (period === 'day') return String(lima.getUTCHours()).padStart(2, '0')
+  if (period === 'year') return `${lima.getUTCFullYear()}-${String(lima.getUTCMonth() + 1).padStart(2, '0')}`
+  return lima.toISOString().slice(0, 10)
+}
+
+export async function getFinanceDashboard(period = 'month') {
+  const config = financePeriodConfig(period)
+  const [requests, payments, paidWithdrawals] = await Promise.all([
     prisma.restaurantWithdrawal.findMany({ include: { restaurant: { select: { id: true, name: true, district: true, owner: { select: { name: true, email: true } } } } }, orderBy: { createdAt: 'desc' } }),
-    prisma.restaurantPayout.findMany({ where: { createdAt: { gte: start } }, select: { commissionAmount: true, netAmount: true, createdAt: true } }),
-    prisma.restaurantWithdrawal.findMany({ where: { status: 'PAID', paidAt: { gte: start } }, select: { amount: true, isTest: true, paidAt: true } }),
+    prisma.payment.findMany({ where: { status: 'PAID', method: 'MERCADOPAGO', order: { status: { not: 'CANCELLED' } }, OR: [{ paidAt: { gte: config.start, lt: config.end } }, { paidAt: null, createdAt: { gte: config.start, lt: config.end } }] }, select: { paidAt: true, createdAt: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } } }),
+    prisma.restaurantWithdrawal.findMany({ where: { status: 'PAID', paidAt: { gte: config.start, lt: config.end } }, select: { amount: true, isTest: true, paidAt: true } }),
   ])
-  const timeline = Object.fromEntries(months.map(month => [month, { month, adminIncome: 0, restaurantIncome: 0, testOutgoing: 0 }]))
-  for (const payout of payouts) {
-    timeline[financeMonthKey(payout.createdAt)].adminIncome += Number(payout.commissionAmount || 0)
-    timeline[financeMonthKey(payout.createdAt)].restaurantIncome += Number(payout.netAmount || 0)
+  const settings = await getPlatformSettings()
+  const timeline = config.buckets.map(bucket => ({ ...bucket, grossSales: 0, adminIncome: 0, restaurantIncome: 0, restaurantDeposited: 0, testSales: 0, testOutgoing: 0, orders: 0 }))
+  const byKey = new Map(timeline.map(item => [item.key, item]))
+  for (const payment of payments) {
+    const key = financeBucketKey(payment.paidAt || payment.createdAt, config.period)
+    const row = byKey.get(key); if (!row) continue
+    const gross = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
+    const admin = gross * settings.commissionPercent / 100
+    row.grossSales += gross; row.adminIncome += admin; row.restaurantIncome += gross - admin; row.orders += 1
+    if (payment.metadata?.mode === 'TEST') row.testSales += gross
   }
   for (const withdrawal of paidWithdrawals) {
-    const key = financeMonthKey(withdrawal.paidAt)
-    if (withdrawal.isTest) timeline[key].testOutgoing += Number(withdrawal.amount || 0)
+    const row = byKey.get(financeBucketKey(withdrawal.paidAt, config.period)); if (!row) continue
+    row.restaurantDeposited += Number(withdrawal.amount || 0)
+    if (withdrawal.isTest) row.testOutgoing += Number(withdrawal.amount || 0)
   }
+  const round = value => Number(Number(value || 0).toFixed(2))
+  const totals = timeline.reduce((total, row) => {
+    total.grossSales += row.grossSales; total.adminIncome += row.adminIncome; total.restaurantIncome += row.restaurantIncome; total.restaurantDeposited += row.restaurantDeposited; total.testSales += row.testSales; total.testOutgoing += row.testOutgoing; total.orders += row.orders
+    return total
+  }, { grossSales: 0, adminIncome: 0, restaurantIncome: 0, restaurantDeposited: 0, testSales: 0, testOutgoing: 0, orders: 0 })
   const requestsData = requests.map(item => ({
     id: item.id, amount: item.amount, status: item.status, isTest: item.isTest, bankName: item.bankName,
     accountHolder: item.accountHolder, destinationAccountMasked: item.destinationAccountMasked,
@@ -555,17 +634,17 @@ export async function getFinanceDashboard() {
     createdAt: item.createdAt, updatedAt: item.updatedAt, restaurant: item.restaurant,
   }))
   return {
+    period: config.period, commissionPercent: settings.commissionPercent,
     summary: {
       pendingRequests: requests.filter(item => item.status === 'PENDING').length,
       processingRequests: requests.filter(item => item.status === 'PROCESSING').length,
-      pendingAmount: Number(requests.filter(item => ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
-      pendingRealAmount: Number(requests.filter(item => !item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
-      pendingTestAmount: Number(requests.filter(item => item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
-      incomingCommission: Number(payouts.reduce((sum, item) => sum + Number(item.commissionAmount || 0), 0).toFixed(2)),
-      restaurantIncome: Number(payouts.reduce((sum, item) => sum + Number(item.netAmount || 0), 0).toFixed(2)),
-      outgoingAmount: Number(paidWithdrawals.filter(item => !item.isTest).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+      pendingAmount: round(requests.filter(item => ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)),
+      pendingRealAmount: round(requests.filter(item => !item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)),
+      pendingTestAmount: round(requests.filter(item => item.isTest && ['PENDING', 'PROCESSING'].includes(item.status)).reduce((sum, item) => sum + Number(item.amount), 0)),
+      grossSales: round(totals.grossSales), adminIncome: round(totals.adminIncome), restaurantIncome: round(totals.restaurantIncome), restaurantDeposited: round(totals.restaurantDeposited),
+      testSales: round(totals.testSales), testOutgoing: round(totals.testOutgoing), orders: totals.orders,
     },
-    timeline: Object.values(timeline).map(item => ({ ...item, adminIncome: Number(item.adminIncome.toFixed(2)), restaurantIncome: Number(item.restaurantIncome.toFixed(2)), testOutgoing: Number(item.testOutgoing.toFixed(2)) })),
+    timeline: timeline.map(item => ({ ...item, grossSales: round(item.grossSales), adminIncome: round(item.adminIncome), restaurantIncome: round(item.restaurantIncome), restaurantDeposited: round(item.restaurantDeposited), testSales: round(item.testSales), testOutgoing: round(item.testOutgoing) })),
     requests: requestsData,
   }
 }

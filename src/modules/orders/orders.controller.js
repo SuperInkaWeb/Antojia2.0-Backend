@@ -12,12 +12,14 @@ export async function create(req, res) {
 
 // GET /api/v1/orders/my
 export async function myOrders(req, res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   const result = await svc.myOrders(req.user.id, req.query)
   res.json({ success: true, ...result })
 }
 
 // GET /api/v1/orders/:id
 export async function getOne(req, res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   const data = await svc.getOne(req.params.id, req.user.id, req.user.role)
   res.json({ success: true, data })
 }

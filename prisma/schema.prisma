@@ -24,6 +24,11 @@ enum MarketingAdminInviteStatus {
   SUSPENDED
 }
 
+enum MarketingRewardType {
+  PROMOTION
+  PURCHASE_REWARD
+}
+
 enum ReportAudience {
   RESTAURANT
   CONSUMER
@@ -110,6 +115,7 @@ model User {
   adminSessions   AdminSession[]
   reports         SupportReport[] @relation("ReportAuthor")
   answeredReports  SupportReport[] @relation("ReportAnswerer")
+  marketingRewards MarketingReward[]
 
   @@index([role])
   @@map("users")
@@ -160,6 +166,31 @@ model MarketingAdminInvite {
 
   @@index([status])
   @@map("marketing_admin_invites")
+}
+
+model MarketingReward {
+  id             String             @id @default(uuid())
+  title          String
+  description    String?            @db.Text
+  type           MarketingRewardType
+  code           String?            @unique
+  discountPct    Int?
+  discountAmount Float?
+  rewardPoints   Int?
+  minPurchase    Float              @default(0)
+  usageLimit     Int?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  isActive       Boolean            @default(true)
+  createdById    String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  createdBy      User               @relation(fields: [createdById], references: [id])
+
+  @@index([type, isActive])
+  @@index([startsAt, endsAt])
+  @@map("marketing_rewards")
 }
 
 model TechAdminInvite {
