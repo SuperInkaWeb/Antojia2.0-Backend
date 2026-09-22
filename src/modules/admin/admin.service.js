@@ -427,6 +427,65 @@ export async function setTechAdminInviteStatus(id, status) {
   return { id: updated.invite.id, email: updated.invite.email, status: updated.invite.status, auth0Id: updated.auth0Id }
 }
 
+export async function listFinanceAdmins(period = 'month', selectedDate) {
+  const allowedPeriods = ['day', 'week', 'month', 'year']
+  if (!allowedPeriods.includes(period)) period = 'month'
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => Number(part.value))
+  const dateParts = typeof selectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate) ? selectedDate.split('-').map(Number) : today
+  const [year, month, day] = dateParts
+  const reference = new Date(Date.UTC(year, month - 1, day, 5)); const start = new Date(reference); let end
+  if (period === 'day') { end = new Date(start); end.setUTCDate(end.getUTCDate() + 1) } else if (period === 'week') { start.setUTCDate(start.getUTCDate() - 6); end = new Date(reference); end.setUTCDate(end.getUTCDate() + 1) } else if (period === 'year') { start.setUTCMonth(0, 1); end = new Date(Date.UTC(year + 1, 0, 1, 5)) } else { start.setUTCDate(1); end = new Date(Date.UTC(year, month, 1, 5)) }
+  const periodFilter = { OR: [{ startedAt: { gte: start, lt: end } }, { endedAt: { gte: start, lt: end } }] }
+  const users = await prisma.user.findMany({ where: { role: 'FINANCE_ADMIN' }, select: { id: true, name: true, email: true, createdAt: true, adminSessions: { where: periodFilter, orderBy: { startedAt: 'asc' }, select: { id: true, startedAt: true, endedAt: true } } }, orderBy: { createdAt: 'asc' } })
+  const invites = await prisma.financeAdminInvite.findMany({ orderBy: { createdAt: 'asc' } })
+  const emails = invites.filter(item => item.email).map(item => ({ email: { equals: item.email, mode: 'insensitive' } }))
+  const registered = emails.length ? await prisma.user.findMany({ where: { OR: emails }, select: { email: true, name: true } }) : []
+  const names = new Map(registered.map(item => [item.email.toLowerCase(), item.name]))
+  const active = new Map(users.map(item => [item.email.toLowerCase(), item]))
+  const expiryNow = new Date()
+  return { period, date: selectedDate || `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, rangeStart: start, rangeEnd: end, total: users.length, slotsUsed: invites.length, invites: invites.map(({ tokenHash, tokenExpiresAt, ...invite }) => ({ ...invite, tokenActive: Boolean(tokenHash && tokenExpiresAt > expiryNow), accountCreated: Boolean(invite.email && names.has(invite.email.toLowerCase())), isFinanceAdmin: Boolean(invite.email && active.has(invite.email.toLowerCase())), name: invite.email ? names.get(invite.email.toLowerCase()) || null : null })), admins: users }
+}
+
+export async function createFinanceAdminInvite(createdByEmail) {
+  const token = createInviteToken()
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(78124022)) AS invite_lock`
+    const invite = await tx.financeAdminInvite.create({ data: { createdByEmail, status: 'APPROVED', tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+    return publicInvite(invite, token)
+  })
+}
+
+export async function refreshFinanceAdminLink(id) {
+  const current = await prisma.financeAdminInvite.findUnique({ where: { id } })
+  if (!current) throw new AppError('Invitación financiera no encontrada', 404)
+  if (current.status === 'SUSPENDED') throw new AppError('Reactiva la invitación antes de renovar el enlace', 409)
+  if (current.status !== 'APPROVED') throw new AppError('Aprueba la cuenta antes de generar el enlace', 409)
+  if (current.email) {
+    const user = await prisma.user.findFirst({ where: { email: { equals: current.email, mode: 'insensitive' }, role: { in: ['ADMIN', 'FINANCE_ADMIN'] } }, select: { role: true } })
+    if (user?.role === 'FINANCE_ADMIN') throw new AppError('Esta cuenta ya se registró; no necesita otro enlace', 409)
+    if (user?.role === 'ADMIN') throw new AppError('No puedes invitar al administrador principal como adminFin', 409)
+  }
+  const token = createInviteToken()
+  const invite = await prisma.financeAdminInvite.update({ where: { id }, data: { tokenHash: hashInviteToken(token), tokenExpiresAt: inviteTokenExpiresAt() } })
+  return publicInvite(invite, token)
+}
+
+export async function setFinanceAdminInviteStatus(id, status) {
+  const invite = await prisma.financeAdminInvite.findUnique({ where: { id } })
+  if (!invite) throw new AppError('Cuenta financiera no encontrada', 404)
+  const updated = await prisma.$transaction(async tx => {
+    const result = await tx.financeAdminInvite.update({ where: { id }, data: { status } })
+    const user = invite.email ? await tx.user.findFirst({ where: { email: { equals: invite.email, mode: 'insensitive' } }, select: { id: true, auth0Id: true, role: true } }) : null
+    if (user) {
+      if (status === 'APPROVED' && user.role === 'ADMIN') throw new AppError('El correo pertenece al administrador principal', 409)
+      if (status === 'APPROVED') await tx.user.update({ where: { id: user.id }, data: { role: 'FINANCE_ADMIN', isActive: true } })
+      else await tx.user.updateMany({ where: { id: user.id, role: 'FINANCE_ADMIN' }, data: { isActive: false } })
+    }
+    return { invite: result, auth0Id: user?.auth0Id }
+  })
+  return { id: updated.invite.id, email: updated.invite.email, status: updated.invite.status, auth0Id: updated.auth0Id }
+}
+
 export async function updateCommissionPercent(value) {
   const commissionPercent = Number(value)
   if (!Number.isInteger(commissionPercent) || commissionPercent < 20 || commissionPercent > 40) {
@@ -460,6 +519,65 @@ export async function markWithdrawalPaid(id, transferReference) {
   if (!withdrawal) throw new AppError('Solicitud de retiro no encontrada', 404)
   if (withdrawal.status !== 'PENDING') throw new AppError('Esta solicitud ya fue procesada', 409)
   if (!withdrawal.isTest && !reference) throw new AppError('Ingresa el número de operación de la transferencia', 400)
+  return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference || 'SOLICITUD_DE_PRUEBA', paidAt: new Date() } })
+}
+
+function financeMonthKey(value) {
+  const date = new Date(value)
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+export async function getFinanceDashboard() {
+  const now = new Date()
+  const months = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11 + index, 1))
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+  })
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
+  const [requests, payouts, paidWithdrawals] = await Promise.all([
+    prisma.restaurantWithdrawal.findMany({ where: { status: { in: ['PENDING', 'PROCESSING'] } }, include: { restaurant: { select: { id: true, name: true, district: true, owner: { select: { name: true, email: true } } } } }, orderBy: { createdAt: 'asc' } }),
+    prisma.restaurantPayout.findMany({ where: { createdAt: { gte: start } }, select: { commissionAmount: true, netAmount: true, createdAt: true } }),
+    prisma.restaurantWithdrawal.findMany({ where: { status: 'PAID', paidAt: { gte: start } }, select: { amount: true, isTest: true, paidAt: true } }),
+  ])
+  const timeline = Object.fromEntries(months.map(month => [month, { month, incoming: 0, outgoing: 0, testOutgoing: 0 }]))
+  for (const payout of payouts) timeline[financeMonthKey(payout.createdAt)].incoming += Number(payout.commissionAmount || 0)
+  for (const withdrawal of paidWithdrawals) {
+    const key = financeMonthKey(withdrawal.paidAt)
+    if (withdrawal.isTest) timeline[key].testOutgoing += Number(withdrawal.amount || 0)
+    else timeline[key].outgoing += Number(withdrawal.amount || 0)
+  }
+  const requestsData = requests.map(item => ({
+    id: item.id, amount: item.amount, status: item.status, isTest: item.isTest, bankName: item.bankName,
+    accountHolder: item.accountHolder, destinationAccountMasked: item.destinationAccountMasked,
+    bankDetails: decryptSensitiveData(item.bankDetailsEncrypted), transferReference: item.transferReference,
+    createdAt: item.createdAt, updatedAt: item.updatedAt, restaurant: item.restaurant,
+  }))
+  return {
+    summary: {
+      pendingRequests: requests.filter(item => item.status === 'PENDING').length,
+      processingRequests: requests.filter(item => item.status === 'PROCESSING').length,
+      pendingAmount: Number(requests.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+      incomingCommission: Number(payouts.reduce((sum, item) => sum + Number(item.commissionAmount || 0), 0).toFixed(2)),
+      outgoingAmount: Number(paidWithdrawals.filter(item => !item.isTest).reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)),
+    },
+    timeline: Object.values(timeline).map(item => ({ ...item, incoming: Number(item.incoming.toFixed(2)), outgoing: Number(item.outgoing.toFixed(2)), testOutgoing: Number(item.testOutgoing.toFixed(2)) })),
+    requests: requestsData,
+  }
+}
+
+export async function acceptFinanceWithdrawal(id) {
+  const request = await prisma.restaurantWithdrawal.findUnique({ where: { id }, select: { id: true, status: true } })
+  if (!request) throw new AppError('Solicitud de pago no encontrada', 404)
+  if (request.status !== 'PENDING') throw new AppError('La solicitud ya fue aceptada o procesada', 409)
+  return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PROCESSING' } })
+}
+
+export async function markFinanceWithdrawalPaid(id, transferReference) {
+  const reference = String(transferReference || '').trim()
+  const request = await prisma.restaurantWithdrawal.findUnique({ where: { id }, select: { id: true, status: true, isTest: true } })
+  if (!request) throw new AppError('Solicitud de pago no encontrada', 404)
+  if (request.status !== 'PROCESSING') throw new AppError('Primero debes aceptar la solicitud de pago', 409)
+  if (!request.isTest && !reference) throw new AppError('Ingresa el número de operación de la transferencia', 400)
   return prisma.restaurantWithdrawal.update({ where: { id }, data: { status: 'PAID', transferReference: reference || 'SOLICITUD_DE_PRUEBA', paidAt: new Date() } })
 }
 
@@ -499,7 +617,7 @@ export async function listUsers(query) {
 }
 
 export async function changeRole(userId, role) {
-  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN', 'MARKETING_ADMIN', 'TECH_ADMIN']
+  const validRoles = ['CONSUMER', 'RESTAURANT_OWNER', 'DELIVERY', 'ADMIN', 'MARKETING_ADMIN', 'TECH_ADMIN', 'FINANCE_ADMIN']
   if (!validRoles.includes(role)) throw new AppError('Rol inválido', 400)
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError('Usuario no encontrado', 404)

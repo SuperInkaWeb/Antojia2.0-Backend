@@ -15,6 +15,7 @@ enum Role {
   ADMIN
   MARKETING_ADMIN
   TECH_ADMIN
+  FINANCE_ADMIN
 }
 
 enum MarketingAdminInviteStatus {
@@ -173,6 +174,20 @@ model TechAdminInvite {
 
   @@index([status])
   @@map("tech_admin_invites")
+}
+
+model FinanceAdminInvite {
+  id            String   @id @default(uuid())
+  email         String?  @unique
+  tokenHash     String?  @unique
+  tokenExpiresAt DateTime?
+  status        MarketingAdminInviteStatus @default(PENDING)
+  createdByEmail String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@map("finance_admin_invites")
 }
 
 model Restaurant {

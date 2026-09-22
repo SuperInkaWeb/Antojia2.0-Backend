@@ -49,5 +49,10 @@ router.post('/tech-admins/link', ctrl.createTechAdminInvite)
 router.post('/tech-admins/:id/link', ctrl.refreshTechAdminLink)
 router.patch('/tech-admins/:id/approve', ctrl.approveTechAdminInvite)
 router.patch('/tech-admins/:id/suspend', ctrl.suspendTechAdminInvite)
+router.get('/finance-admins', ctrl.listFinanceAdmins)
+router.post('/finance-admins/link', ctrl.createFinanceAdminInvite)
+router.post('/finance-admins/:id/link', ctrl.refreshFinanceAdminLink)
+router.patch('/finance-admins/:id/approve', ctrl.approveFinanceAdminInvite)
+router.patch('/finance-admins/:id/suspend', ctrl.suspendFinanceAdminInvite)
 
 export default router

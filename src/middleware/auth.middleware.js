@@ -73,6 +73,10 @@ export async function loadUser(req, res, next) {
       const invite = await prisma.techAdminInvite.findUnique({ where: { email: String(user.email).toLowerCase() }, select: { status: true } })
       if (invite?.status !== 'APPROVED') return res.status(403).json({ success: false, message: 'El acceso técnico no está aprobado.' })
     }
+    if (user.role === 'FINANCE_ADMIN') {
+      const invite = await prisma.financeAdminInvite.findUnique({ where: { email: String(user.email).toLowerCase() }, select: { status: true } })
+      if (invite?.status !== 'APPROVED') return res.status(403).json({ success: false, message: 'El acceso financiero no está aprobado.' })
+    }
 
     // Guardar en cache
     cacheSet(cacheKey, user, USER_CACHE_TTL)

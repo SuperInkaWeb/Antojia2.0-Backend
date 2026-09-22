@@ -33,6 +33,11 @@ export const createTechAdminInvite = async (req, res) => res.status(201).json({ 
 export const refreshTechAdminLink = async (req, res) => res.json({ success: true, message: 'Enlace técnico renovado', data: await svc.refreshTechAdminLink(req.params.id) })
 export const approveTechAdminInvite = async (req, res) => { const data = await svc.setTechAdminInviteStatus(req.params.id, 'APPROVED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta técnica aprobada', data }) }
 export const suspendTechAdminInvite = async (req, res) => { const data = await svc.setTechAdminInviteStatus(req.params.id, 'SUSPENDED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta técnica suspendida', data }) }
+export const listFinanceAdmins = async (req, res) => res.json({ success: true, data: await svc.listFinanceAdmins(req.query.period, req.query.date) })
+export const createFinanceAdminInvite = async (req, res) => res.status(201).json({ success: true, message: 'Enlace de registro financiero creado', data: await svc.createFinanceAdminInvite(req.user.email) })
+export const refreshFinanceAdminLink = async (req, res) => res.json({ success: true, message: 'Enlace financiero renovado', data: await svc.refreshFinanceAdminLink(req.params.id) })
+export const approveFinanceAdminInvite = async (req, res) => { const data = await svc.setFinanceAdminInviteStatus(req.params.id, 'APPROVED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta financiera aprobada', data }) }
+export const suspendFinanceAdminInvite = async (req, res) => { const data = await svc.setFinanceAdminInviteStatus(req.params.id, 'SUSPENDED'); if (data.auth0Id) invalidateUserCache(data.auth0Id); delete data.auth0Id; res.json({ success: true, message: 'Cuenta financiera suspendida', data }) }
 
 export const updateCommissionPercent = async (req, res) => {
   const data = await svc.updateCommissionPercent(req.body.commissionPercent)

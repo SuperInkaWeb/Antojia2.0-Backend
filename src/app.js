@@ -13,6 +13,7 @@ import paymentsRouter    from './modules/payments/payments.routes.js'
 import { mpWebhook }     from './modules/payments/payments.controller.js'
 import adminRouter       from './modules/admin/admin.routes.js'
 import marketingRouter   from './modules/admin/marketing.routes.js'
+import financeRouter     from './modules/admin/finance.routes.js'
 import driversRouter     from './modules/drivers/drivers.routes.js'
 import uploadsRouter     from './modules/storage/uploads.routes.js'
 import reportsRouter     from './modules/reports/reports.routes.js'
@@ -107,6 +108,7 @@ app.post('/api/v1/payments/mercadopago/webhook', mpWebhook)
 app.use('/api/v1/payments',    paymentsRouter)
 app.use('/api/v1/admin',       adminRouter)
 app.use('/api/v1/admin-marketing', marketingRouter)
+app.use('/api/v1/admin-finance', financeRouter)
 app.use('/api/v1/drivers',     driversRouter)
 app.use('/api/v1/uploads',     uploadsRouter)
 app.use('/api/v1/reports',     reportsRouter)

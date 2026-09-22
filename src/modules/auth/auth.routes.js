@@ -19,6 +19,7 @@ router.patch('/me', authenticate, ctrl.updateMe)
 router.post('/register-admin', authenticate, ctrl.registerAdmin)
 router.post('/register-marketing-admin', authenticate, ctrl.registerMarketingAdmin)
 router.post('/register-tech-admin', authenticate, ctrl.registerTechAdmin)
+router.post('/register-finance-admin', authenticate, ctrl.registerFinanceAdmin)
 router.post('/admin-session/end', authenticate, ctrl.endAdminSession)
 
 // ── Cambiar rol (solo admin) ─────────────────────────────────
