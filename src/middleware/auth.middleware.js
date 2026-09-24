@@ -6,7 +6,6 @@ export { verifyToken }
 
 // ── TTL del cache de usuario: 2 minutos ──────────────────────────
 // Un usuario autenticado activo hace decenas de requests/minuto.
-// Sin cache: cada request = 1-3 queries a Supabase.
 // Con cache: 0 queries durante 2 min → ~90% menos carga en BD.
 const USER_CACHE_TTL = 120 // segundos
 

@@ -22,8 +22,6 @@ services:
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE}
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
     depends_on:
       backend:
         condition: service_healthy

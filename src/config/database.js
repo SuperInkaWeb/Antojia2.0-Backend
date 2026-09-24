@@ -2,9 +2,6 @@ import { PrismaClient } from '@prisma/client'
 
 const CONNECTION_LIMIT = parseInt(process.env.DB_POOL_SIZE || '10')
 
-// DATABASE_URL debe incluir ?pgbouncer=true&connection_limit=10
-// usando el Transaction Pooler de Supabase (puerto 6543)
-
 const globalForPrisma = globalThis
 
 export const prisma =
