@@ -210,22 +210,22 @@ npm run db:reset     # Reset completo + seed
 ### Variables de entorno en Render
 
 Configura estas variables en el apartado **Environment** del servicio
-`foodinka-backend-1`. Los valores sensibles se indican como
+`xxxxxxxxx`. Los valores sensibles se indican como
 `<configurar-en-Render>` y no deben guardarse en este README ni en Git.
 
 | Variable | Valor o referencia | Uso |
 |---|---|---|
-| `ADMIN_EMAIL` | `benjaminhuarocgil@gmail.com` | Correo autorizado para el rol administrador |
-| `AUTH0_AUDIENCE` | `https://api.antojia.com` | Audience del API en Auth0 |
-| `AUTH0_DOMAIN` | `dev-i25syim5mvrwjpag.us.auth0.com` | Dominio del tenant Auth0 |
-| `BACKEND_URL` | `https://foodinka-backend-1.onrender.com` | URL pública del backend |
-| `CLOUDINARY_CLOUD_NAME` | `gwrzo9a7` | Cloud de imágenes |
+| `ADMIN_EMAIL` | `xxxxxxxxx` | Correo autorizado para el rol administrador |
+| `AUTH0_AUDIENCE` | `https://xxxxxxxxx` | Audience del API en Auth0 |
+| `AUTH0_DOMAIN` | `dev-xxxxxxxxx.us.auth0.com` | Dominio del tenant Auth0 |
+| `BACKEND_URL` | `https://xxxxxxxxx.onrender.com` | URL pública del backend |
+| `CLOUDINARY_CLOUD_NAME` | `xxxxxxxxx` | Cloud de imágenes |
 | `CLOUDINARY_API_KEY` | `<configurar-en-Render>` | Credencial de Cloudinary |
 | `CLOUDINARY_API_SECRET` | `<configurar-en-Render>` | Secreto de Cloudinary |
 | `DATABASE_URL` | `<URL pooler de Neon>` | Conexión de la aplicación |
 | `DB_POOL_SIZE` | `10` | Límite del pool de Prisma |
 | `DIRECT_URL` | `<URL directa de Neon>` | Conexión directa para Prisma |
-| `FRONTEND_URL` | `https://foodinka-frontend.vercel.app` | Origen permitido por CORS y URLs de retorno |
+| `FRONTEND_URL` | `https://xxxxxxxxx.vercel.app` | Origen permitido por CORS y URLs de retorno |
 | `MERCADOPAGO_ACCESS_TOKEN` | `<configurar-en-Render>` | Token de Checkout Pro de producción; habilita cobros reales |
 | `MERCADOPAGO_TEST_ACCESS_TOKEN` | `<configurar-en-Render>` | Token de Checkout Pro de pruebas |
 | `MERCADOPAGO_WEBHOOK_SECRET` | `<configurar-en-Render>` | Validación de webhooks de Mercado Pago |
