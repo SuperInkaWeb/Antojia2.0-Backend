@@ -226,6 +226,7 @@ Configura estas variables en el apartado **Environment** del servicio
 | `DB_POOL_SIZE` | `10` | Límite del pool de Prisma |
 | `DIRECT_URL` | `<URL directa de Neon>` | Conexión directa para Prisma |
 | `FRONTEND_URL` | `https://foodinka-frontend.vercel.app` | Origen permitido por CORS y URLs de retorno |
+| `MERCADOPAGO_ACCESS_TOKEN` | `<configurar-en-Render>` | Token de Checkout Pro de producción; habilita cobros reales |
 | `MERCADOPAGO_TEST_ACCESS_TOKEN` | `<configurar-en-Render>` | Token de Checkout Pro de pruebas |
 | `MERCADOPAGO_WEBHOOK_SECRET` | `<configurar-en-Render>` | Validación de webhooks de Mercado Pago |
 | `NODE_ENV` | `production` | Entorno de ejecución |
