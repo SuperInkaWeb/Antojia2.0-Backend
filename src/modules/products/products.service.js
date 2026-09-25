@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database.js'
 import { AppError } from '../../shared/utils/appError.js'
+import { deleteImageByUrl } from '../storage/uploads.service.js'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export async function create(restaurantId, userId, role, body) {
 export async function update(id, userId, role, body) {
   const product = await prisma.product.findUnique({
     where: { id },
-    select: { restaurantId: true },
+    select: { restaurantId: true, imageUrl: true },
   })
   if (!product) throw new AppError('Producto no encontrado', 404)
 
@@ -191,6 +192,14 @@ export async function update(id, userId, role, body) {
     },
     select: PRODUCT_SELECT,
   })
+
+  if (imageUrl !== undefined && product.imageUrl && product.imageUrl !== imageUrl) {
+    try {
+      await deleteImageByUrl(product.imageUrl)
+    } catch (error) {
+      console.warn('No se pudo eliminar la imagen anterior del producto en Cloudinary:', error.message)
+    }
+  }
 
   return {
     ...updated,
