@@ -1,6 +1,7 @@
 import { verifyToken, getIdentityClaims } from '../config/auth0.js'
 import { prisma }      from '../config/database.js'
 import { cacheGet, cacheSet, cacheDel } from '../config/cache.js'
+import { AppError } from '../shared/utils/appError.js'
 
 export { verifyToken }
 
@@ -16,10 +17,14 @@ const include = {
 }
 
 async function findOrCreateUser(auth0Id, email, name, picture) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) {
+    throw new AppError('Auth0 no entregó un correo válido para esta cuenta', 422)
+  }
+
   // 1. Buscar por auth0Id
   let user = await prisma.user.findUnique({ where: { auth0Id }, include })
   if (user) {
-    const normalizedEmail = String(email || '').trim().toLowerCase()
     if (normalizedEmail && user.email !== normalizedEmail) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -31,12 +36,12 @@ async function findOrCreateUser(auth0Id, email, name, picture) {
   }
 
   // 2. Buscar por email (usuario seed / otro proveedor OAuth)
-  if (email) {
-    const byEmail = await prisma.user.findUnique({ where: { email } })
+  if (normalizedEmail) {
+    const byEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } })
     if (byEmail) {
       return prisma.user.update({
         where:   { id: byEmail.id },
-        data:    { auth0Id, email: email.toLowerCase(), avatarUrl: byEmail.avatarUrl || picture },
+        data:    { auth0Id, email: normalizedEmail, avatarUrl: byEmail.avatarUrl || picture },
         include,
       })
     }
@@ -46,7 +51,7 @@ async function findOrCreateUser(auth0Id, email, name, picture) {
   return prisma.user.upsert({
     where:  { auth0Id },
     update: { name, avatarUrl: picture },
-    create: { auth0Id, email, name, avatarUrl: picture, role: 'CONSUMER' },
+    create: { auth0Id, email: normalizedEmail, name, avatarUrl: picture, role: 'CONSUMER' },
     include,
   })
 }
