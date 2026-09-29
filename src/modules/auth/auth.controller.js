@@ -9,7 +9,7 @@ import { encryptSensitiveData, maskAccount } from '../../shared/utils/sensitiveD
 // POST /api/v1/auth/sync
 export async function sync(req, res) {
   const { sub: auth0Id } = req.auth.payload
-  const { email, name, picture } = getIdentityClaims(req.auth.payload)
+  const { email, name, picture } = await getIdentityClaims(req.auth.payload, req.auth.token)
 
   const { user, isNew } = await authService.syncUser({
     auth0Id,
@@ -136,6 +136,7 @@ export async function registerAdmin(req, res) {
   const currentEmail = String(req.user.email || '').trim().toLowerCase()
 
   if (!adminEmail) throw new AppError('El correo del administrador no está configurado', 503)
+  if (!currentEmail) throw new AppError('Auth0 no entregó un correo válido para esta cuenta', 403)
   if (currentEmail !== adminEmail) throw new AppError('Esta cuenta no está autorizada para ser administradora', 403)
 
   const existingAdmin = await prisma.user.findFirst({

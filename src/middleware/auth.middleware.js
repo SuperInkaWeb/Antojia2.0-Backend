@@ -18,7 +18,17 @@ const include = {
 async function findOrCreateUser(auth0Id, email, name, picture) {
   // 1. Buscar por auth0Id
   let user = await prisma.user.findUnique({ where: { auth0Id }, include })
-  if (user) return user
+  if (user) {
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (normalizedEmail && user.email !== normalizedEmail) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { email: normalizedEmail, name: name || user.name, avatarUrl: picture || user.avatarUrl },
+        include,
+      })
+    }
+    return user
+  }
 
   // 2. Buscar por email (usuario seed / otro proveedor OAuth)
   if (email) {
@@ -26,7 +36,7 @@ async function findOrCreateUser(auth0Id, email, name, picture) {
     if (byEmail) {
       return prisma.user.update({
         where:   { id: byEmail.id },
-        data:    { auth0Id, avatarUrl: byEmail.avatarUrl || picture },
+        data:    { auth0Id, email: email.toLowerCase(), avatarUrl: byEmail.avatarUrl || picture },
         include,
       })
     }
@@ -54,7 +64,7 @@ export async function loadUser(req, res, next) {
     }
 
     // ── Cache miss: ir a la BD ─────────────────────────────────
-    const claims  = getIdentityClaims(req.auth.payload)
+    const claims  = await getIdentityClaims(req.auth.payload, req.auth.token)
     const email   = claims.email
     const name    = claims.name || email.split('@')[0] || 'Usuario'
     const picture = claims.picture
