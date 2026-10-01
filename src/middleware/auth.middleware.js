@@ -62,7 +62,10 @@ export async function loadUser(req, res, next) {
 
     // ── Servir desde cache si está disponible ──────────────────
     const cacheKey = `user:${auth0Id}`
-    const cached   = cacheGet(cacheKey)
+    // Estos flujos pueden reparar usuarios eliminados o cambios de rol hechos
+    // directamente en la BD; nunca deben confiar en una entrada vieja.
+    const bypassCache = req.path === '/register-admin' || req.path === '/sync'
+    const cached   = bypassCache ? null : cacheGet(cacheKey)
     if (cached) {
       req.user = cached
       return next()
