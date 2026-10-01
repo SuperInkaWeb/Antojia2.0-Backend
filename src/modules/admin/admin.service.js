@@ -102,6 +102,12 @@ export async function getMetrics() {
   const testSalesThisMonth = testPayments.filter(payment => byPaidDate(payment) >= startOfMonth)
     .reduce((sum, payment) => sum + grossSales(payment), 0)
   const testAdminCommissionThisMonth = testSalesThisMonth * settings.commissionPercent / 100
+  const adminEarningsTotal = recordedPayments
+    .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
+  const realAdminEarningsTotal = productionPayments
+    .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
+  const testAdminEarningsTotal = testPayments
+    .reduce((sum, payment) => sum + grossSales(payment) * settings.commissionPercent / 100, 0)
   const avgTicket = productionPayments.length
     ? productionPayments.reduce((sum, payment) => sum + Number(payment.amount), 0) / productionPayments.length
     : 0
@@ -129,6 +135,9 @@ export async function getMetrics() {
       testSalesThisMonth: Number(testSalesThisMonth.toFixed(2)),
       testAdminCommissionThisMonth: Number(testAdminCommissionThisMonth.toFixed(2)),
       testPaymentsThisMonth: testPayments.filter(payment => byPaidDate(payment) >= startOfMonth).length,
+      total: Number(adminEarningsTotal.toFixed(2)),
+      realTotal: Number(realAdminEarningsTotal.toFixed(2)),
+      testTotal: Number(testAdminEarningsTotal.toFixed(2)),
     },
     topRestaurants: topRestaurants.map(r => ({ ...r, totalOrders: r._count.orders })),
   }
@@ -140,17 +149,28 @@ export async function getRevenueChart() {
   from.setMonth(from.getMonth() - 5, 1)
   from.setHours(0, 0, 0, 0)
   const payments = await prisma.payment.findMany({
-    where: { status: 'PAID', method: 'MERCADOPAGO', paidAt: { gte: from }, order: { status: { not: 'CANCELLED' } } },
-    select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { subtotal: true, discountAmount: true } } },
+    where: { status: { in: ['PAID', 'PENDING'] }, method: 'MERCADOPAGO', OR: [{ paidAt: { gte: from } }, { createdAt: { gte: from } }], order: { status: { not: 'CANCELLED' } } },
+    select: { amount: true, paidAt: true, createdAt: true, metadata: true, order: { select: { status: true, subtotal: true, discountAmount: true } } },
   })
   const totals = new Map()
-  for (const payment of payments.filter(item => item.metadata?.mode !== 'TEST')) {
+  const validPayments = payments.filter(payment => payment.metadata?.mode !== 'TEST' ? payment.status === 'PAID' : (payment.status === 'PAID' || payment.order.status !== 'PENDING'))
+  for (const payment of validPayments) {
     const date = payment.paidAt || payment.createdAt
     const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     const sale = Math.max(0, Number(payment.order.subtotal) - Number(payment.order.discountAmount || 0))
-    totals.set(month, (totals.get(month) || 0) + sale * settings.commissionPercent / 100)
+    const commission = sale * settings.commissionPercent / 100
+    const row = totals.get(month) || { revenue: 0, realRevenue: 0, testRevenue: 0 }
+    row.revenue += commission
+    if (payment.metadata?.mode === 'TEST') row.testRevenue += commission
+    else row.realRevenue += commission
+    totals.set(month, row)
   }
-  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, revenue]) => ({ month, revenue: Number(revenue.toFixed(2)) }))
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, values]) => ({
+    month,
+    revenue: Number(values.revenue.toFixed(2)),
+    realRevenue: Number(values.realRevenue.toFixed(2)),
+    testRevenue: Number(values.testRevenue.toFixed(2)),
+  }))
 }
 
 async function getPlatformSettings() {
