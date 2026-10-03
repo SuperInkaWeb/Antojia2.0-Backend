@@ -215,7 +215,6 @@ Configura estas variables en el apartado **Environment** del servicio
 
 | Variable | Valor o referencia | Uso |
 |---|---|---|
-| `ADMIN_EMAIL` | `xxxxxxxxx` | Correo autorizado para el rol administrador |
 | `AUTH0_AUDIENCE` | `https://xxxxxxxxx` | Audience del API en Auth0 |
 | `AUTH0_DOMAIN` | `dev-xxxxxxxxx.us.auth0.com` | Dominio del tenant Auth0 |
 | `BACKEND_URL` | `https://xxxxxxxxx.onrender.com` | URL pública del backend |

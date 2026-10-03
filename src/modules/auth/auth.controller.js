@@ -1,6 +1,6 @@
 import * as authService from './auth.service.js'
 import { prisma } from '../../config/database.js'
-import { getIdentityClaims } from '../../config/auth0.js'
+import { getIdentityClaims, AUTH0_ROLES_CLAIM } from '../../config/auth0.js'
 import { AppError } from '../../shared/utils/appError.js'
 import { invalidateUserCache } from '../../middleware/auth.middleware.js'
 import { createHash } from 'node:crypto'
@@ -130,14 +130,14 @@ export async function registerRestaurant(req, res) {
 }
 
 // POST /api/v1/auth/register-admin
-// El único correo autorizado se configura en ADMIN_EMAIL dentro de Render.
+// El acceso se autoriza mediante el rol ADMIN de Auth0 para Antojia.
 export async function registerAdmin(req, res) {
-  const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase()
-  const currentEmail = String(req.user.email || '').trim().toLowerCase()
+  const auth0Roles = req.auth?.payload?.[AUTH0_ROLES_CLAIM]
+  const roles = Array.isArray(auth0Roles) ? auth0Roles : []
 
-  if (!adminEmail) throw new AppError('El correo del administrador no está configurado', 503)
-  if (!currentEmail) throw new AppError('Auth0 no entregó un correo válido para esta cuenta', 403)
-  if (currentEmail !== adminEmail) throw new AppError('Esta cuenta no está autorizada para ser administradora', 403)
+  if (!roles.includes('ADMIN')) {
+    throw new AppError('Esta cuenta no tiene el rol ADMIN de Antojia en Auth0', 403)
+  }
 
   const existingAdmin = await prisma.user.findFirst({
     where: { role: 'ADMIN' },
