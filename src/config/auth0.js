@@ -5,6 +5,9 @@ export const verifyToken = auth({
   audience: process.env.AUTH0_AUDIENCE,
 })
 
+// Claim personalizado que la Action de Auth0 agrega únicamente para Antojia.
+export const AUTH0_ROLES_CLAIM = 'https://antojia.com/claims/roles'
+
 // Auth0 exige un namespace para los claims personalizados incluidos en
 // access tokens destinados a una API. Mantener la lectura aquí evita que
 // cada middleware tenga que conocer el formato exacto del token.
