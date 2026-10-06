@@ -20,6 +20,11 @@ import reportsRouter     from './modules/reports/reports.routes.js'
 
 const app = express()
 
+const allowedOrigins = String(process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean)
+
 // ── 0. Confiar en el proxy (Render / Railway / Fly.io) ────────────
 // CRÍTICO: sin esto, Express ve la IP del proxy reverso para TODAS las
 // requests (siempre la misma), no la IP real de cada visitante. Eso hace
@@ -36,7 +41,10 @@ app.use(compression({ level: 6, threshold: 1024 }))
 // ── 2. Seguridad ──────────────────────────────────────────────────
 app.use(helmet())
 app.use(cors({
-  origin:      process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin:      (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+    return callback(new Error(`Origen no permitido por CORS: ${origin}`))
+  },
   credentials: true,
   methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }))
