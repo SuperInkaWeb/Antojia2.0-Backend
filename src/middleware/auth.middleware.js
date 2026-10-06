@@ -74,7 +74,7 @@ export async function loadUser(req, res, next) {
     // ── Cache miss: ir a la BD ─────────────────────────────────
     const claims  = await getIdentityClaims(req.auth.payload, req.auth.token)
     const email   = claims.email
-    const name    = claims.name || email.split('@')[0] || 'Usuario'
+    const name    = claims.name || (email ? email.split('@')[0] : 'Usuario')
     const picture = claims.picture
 
     const user = await findOrCreateUser(auth0Id, email, name, picture)
