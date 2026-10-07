@@ -7,6 +7,12 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      # URL oficial de consulta RUC de ApiPeruDev.
+      - key: APIPERUDEV_API_URL
+        value: https://api.apiperu.dev/ruc
+      # Configurar manualmente en Render > Environment; nunca subir el token a Git.
+      - key: APIPERUDEV_API_TOKEN
+        sync: false
       # Render genera este secreto una sola vez y lo conserva entre despliegues.
       - key: WITHDRAWAL_DATA_ENCRYPTION_KEY
         generateValue: true

@@ -103,8 +103,12 @@ MERCADOPAGO_WEBHOOK_SECRET=tu_firma_secreta_del_webhook
 MERCADOPAGO_TEST_ACCESS_TOKEN=tu_access_token_de_prueba
 WITHDRAWAL_DATA_ENCRYPTION_KEY=64_caracteres_hexadecimales_aleatorios
 
-# Solo para pruebas sin proveedor real de SUNAT
-SUNAT_MOCK_ENABLED=true
+# Consulta RUC con ApiPeruDev (el token solo vive en el backend)
+APIPERUDEV_API_URL=https://api.apiperu.dev/ruc
+APIPERUDEV_API_TOKEN=tu_token_de_apiperudev
+
+# Solo para pruebas locales sin consultar un proveedor real; no usar en producción
+SUNAT_MOCK_ENABLED=false
 ```
 
 > ⚠️ El parámetro `pgbouncer=true` es obligatorio. Sin él Prisma usa prepared statements que PgBouncer no soporta y el servidor lanza el error `42P05`.
@@ -217,6 +221,8 @@ Configura estas variables en el apartado **Environment** del servicio
 |---|---|---|
 | `AUTH0_AUDIENCE` | `https://xxxxxxxxx` | Audience del API en Auth0 |
 | `AUTH0_DOMAIN` | `dev-xxxxxxxxx.us.auth0.com` | Dominio del tenant Auth0 |
+| `APIPERUDEV_API_URL` | `https://api.apiperu.dev/ruc` | Endpoint de consulta RUC |
+| `APIPERUDEV_API_TOKEN` | `<configurar-en-Render>` | Token privado de ApiPeruDev |
 | `BACKEND_URL` | `https://xxxxxxxxx.onrender.com` | URL pública del backend |
 | `CLOUDINARY_CLOUD_NAME` | `xxxxxxxxx` | Cloud de imágenes |
 | `CLOUDINARY_API_KEY` | `<configurar-en-Render>` | Credencial de Cloudinary |
@@ -229,7 +235,7 @@ Configura estas variables en el apartado **Environment** del servicio
 | `MERCADOPAGO_TEST_ACCESS_TOKEN` | `<configurar-en-Render>` | Token de Checkout Pro de pruebas |
 | `MERCADOPAGO_WEBHOOK_SECRET` | `<configurar-en-Render>` | Validación de webhooks de Mercado Pago |
 | `NODE_ENV` | `production` | Entorno de ejecución |
-| `SUNAT_MOCK_ENABLED` | `true` | Usa la respuesta simulada de SUNAT |
+| `SUNAT_MOCK_ENABLED` | `false` o ausente | El mock debe estar desactivado en producción |
 | `WEB_CONCURRENCY` | `1` | Número de workers del proceso Node |
 | `WITHDRAWAL_DATA_ENCRYPTION_KEY` | `<configurar-en-Render>` | Cifrado de datos sensibles de retiros |
 
@@ -238,10 +244,16 @@ endpoint **directo**, ambos con `sslmode=require&channel_binding=require`.
 Conserva estable `WITHDRAWAL_DATA_ENCRYPTION_KEY`: cambiarla impide descifrar
 solicitudes almacenadas anteriormente.
 
-Las credenciales que no estén configuradas no deben inventarse. Por ejemplo,
-`MERCADOPAGO_ACCESS_TOKEN` solo debe añadirse si se habilitan cobros de
-producción; `SUNAT_API_URL` y `SUNAT_API_TOKEN` solo son necesarios cuando
-`SUNAT_MOCK_ENABLED=false`.
+Las credenciales que no estén configuradas no deben inventarse. Para ApiPeruDev,
+crea el token desde su panel en **Api Tokens** y cópialo únicamente en Render.
+El frontend nunca debe recibir `APIPERUDEV_API_TOKEN`: el navegador llama a
+`/api/v1/restaurants/verify-ruc/:ruc` y el backend consulta ApiPeruDev.
+
+El endpoint oficial responde con `POST /ruc`, body `{ "ruc": "..." }` y
+`Authorization: Bearer <token>`. El backend normaliza esa respuesta al formato
+que ya usa el frontend (`razonSocial`, `estado`, `condicion`). Las variables
+antiguas `SUNAT_API_URL` y `SUNAT_API_TOKEN` todavía funcionan como fallback
+temporal, pero se recomienda migrar a las variables `APIPERUDEV_*`.
 
 > ⚠️ Render asigna el puerto automáticamente vía `process.env.PORT`. No uses un puerto fijo en producción.
 
