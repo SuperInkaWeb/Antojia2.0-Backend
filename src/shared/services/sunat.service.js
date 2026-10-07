@@ -65,7 +65,7 @@ export async function verifyRuc(ruc) {
 
   try {
     const response = await axios.post(
-      process.env.SUNAT_API_URL,
+      apiUrl,
       { ruc },
       {
         headers: {
