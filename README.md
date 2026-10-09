@@ -211,6 +211,62 @@ npm run db:reset     # Reset completo + seed
 
 ## 🚢 Despliegue en producción (Render)
 
+## Estado técnico documentado
+
+La versión actual contempla autenticación con Auth0, marketplace de restaurantes,
+productos y categorías, pedidos de delivery y reservas, pagos con Mercado Pago,
+Yape y efectivo, validación de RUC, carga de imágenes con Cloudinary, gestión de
+repartidores, reportes de soporte, paneles administrativos por rol y liquidación
+de restaurantes con solicitudes de retiro.
+
+El frontend se publica en Vercel y consume esta API desplegada en Render. La
+base de datos PostgreSQL se conecta mediante Prisma; `DATABASE_URL` debe apuntar
+al endpoint pooler y `DIRECT_URL` al endpoint directo para las migraciones.
+
+### Variables documentadas sin valores sensibles
+
+En Render se deben mantener los nombres siguientes. Los valores reales no se
+incluyen en el repositorio ni en esta guía:
+
+| Variable | Valor documentado | Uso |
+|---|---|---|
+| `APIPERUDEV_API_TOKEN` | `xxxx` | Token privado para consulta RUC |
+| `APIPERUDEV_API_URL` | `https://api.apiperu.dev/ruc` | Endpoint de ApiPeruDev |
+| `AUTH0_AUDIENCE` | `xxxx` | Audience del API |
+| `AUTH0_DOMAIN` | `xxxx` | Dominio Auth0 |
+| `BACKEND_URL` | `xxxx` | URL pública del backend |
+| `CLOUDINARY_API_KEY` | `xxxx` | Credencial Cloudinary |
+| `CLOUDINARY_API_SECRET` | `xxxx` | Secreto Cloudinary |
+| `CLOUDINARY_CLOUD_NAME` | `xxxx` | Nombre del cloud |
+| `DATABASE_URL` | `xxxx` | Conexión pooler PostgreSQL |
+| `DB_POOL_SIZE` | `xxxx` | Tamaño del pool Prisma |
+| `DIRECT_URL` | `xxxx` | Conexión directa para migraciones |
+| `FRONTEND_URL` | `xxxx` | Origen Vercel y URLs de retorno |
+| `MERCADOPAGO_ACCESS_TOKEN` | `xxxx` | Token de producción |
+| `MERCADOPAGO_TEST_ACCESS_TOKEN` | `xxxx` | Token de sandbox |
+| `MERCADOPAGO_WEBHOOK_SECRET` | `xxxx` | Validación de webhooks |
+| `NODE_ENV` | `xxxx` | Entorno de ejecución |
+| `SUNAT_MOCK_ENABLED` | `xxxx` | Mock local de RUC |
+| `WEB_CONCURRENCY` | `xxxx` | Número de workers |
+| `WITHDRAWAL_DATA_ENCRYPTION_KEY` | `xxxx` | Cifrado de datos bancarios |
+
+### Pendientes y riesgos conocidos
+
+- ApiPeruDev tiene una cuota de 100 consultas. Una consulta con RUC inválido
+  puede consumir cuota, por lo que se debe evaluar caché por RUC, validación y
+  rate limiting específico, o migrar a un proveedor con mayor cuota y contrato
+  adecuado para producción.
+- Falta completar y evidenciar pruebas de pagos reales con Mercado Pago,
+  incluyendo webhook público, retorno aprobado, pendiente y fallido,
+  conciliación y manejo de idempotencia.
+- Debe completarse la corrección de los errores de lint del frontend y ejecutar
+  un build de producción con permisos de escritura sobre `node_modules`.
+- El entorno local debe definir `DIRECT_URL` antes de ejecutar `prisma validate`
+  o las migraciones.
+
+Los informes técnicos detallados se encuentran en la carpeta `docs/` del
+repositorio backend.
+
 ### Variables de entorno en Render
 
 Configura estas variables en el apartado **Environment** del servicio
